@@ -7,16 +7,34 @@ class DemoShell {
         this.running = false;
         this.history = [];
         this.historyPos = -1;
+        this.stateStack = new StateStack(this.term);
+        this.activeDialog = null;
+        this.menuDialog = null;
+        this._pendingAction = null;
+
+        this.menuItems = [
+            { name: 'neofetch', desc: 'System Information' },
+            { name: 'fortune',  desc: 'Random Fortune' },
+            { name: 'date',     desc: 'Current Date/Time' },
+            { name: 'cowsay',   desc: 'Talking Cow' },
+            { name: 'whoami',   desc: 'Show User' },
+            { name: 'ascii',    desc: 'ANSI Color Chart' },
+            { name: 'uname',    desc: 'System Name' },
+            { name: 'clear',    desc: 'Clear Screen' },
+            { name: 'calc',     desc: 'Simple Calculator' },
+            { name: 'help',     desc: 'Available Commands' },
+        ];
 
         this.commands = {
             help: () => {
                 this.print('\x1B[1;33mAvailable commands:\x1B[0m\n');
                 this.print('  help       Show this help\n');
+                this.print('  menu       Open command menu\n');
                 this.print('  clear      Clear the screen\n');
                 this.print('  echo       Echo text\n');
                 this.print('  date       Show current date/time\n');
                 this.print('  uname      Show system info\n');
-                this.print('  neofetch   Show system information (lite)\n');
+                this.print('  neofetch   Show system information\n');
                 this.print('  cowsay     Let a cow speak\n');
                 this.print('  ascii      Show ANSI color chart\n');
                 this.print('  fortune    Show a fortune\n');
@@ -107,6 +125,7 @@ class DemoShell {
             whoami: () => {
                 this.print('user\n');
             },
+            menu: () => this._menuCmd(),
         };
 
         this.start();
@@ -131,20 +150,59 @@ class DemoShell {
 
     _isWide(ch) {
         const code = ch.charCodeAt ? ch.charCodeAt(0) : ch;
-        if (code < 0x1100) return false;
-        if (code <= 0x11FF) return true;
-        if (code >= 0x2E80 && code <= 0x9FFF) return true;
-        if (code >= 0xAC00 && code <= 0xD7AF) return true;
-        if (code >= 0xF900 && code <= 0xFAFF) return true;
-        if (code >= 0xFE10 && code <= 0xFE19) return true;
-        if (code >= 0xFE30 && code <= 0xFE6F) return true;
-        if (code >= 0xFF01 && code <= 0xFF60) return true;
-        if (code >= 0xFFE0 && code <= 0xFFE6) return true;
-        return false;
+
+        if (code >= 0x1100) {
+            if (code <= 0x11FF) return true;
+            if (code >= 0x2E80 && code <= 0x9FFF) return true;
+            if (code >= 0xAC00 && code <= 0xD7AF) return true;
+            if (code >= 0xF900 && code <= 0xFAFF) return true;
+            if (code >= 0xFE10 && code <= 0xFE19) return true;
+            if (code >= 0xFE30 && code <= 0xFE6F) return true;
+            if (code >= 0xFF01 && code <= 0xFF60) return true;
+            if (code >= 0xFFE0 && code <= 0xFFE6) return true;
+            if (code >= 0x20000 && code <= 0x2FFFF) return true;
+            if (code >= 0x30000 && code <= 0x3FFFF) return true;
+        }
+
+        if (code < 0x100) return false;
+
+        if (code >= 0x2190 && code <= 0x21FF) return false;
+        if (code >= 0x2300 && code <= 0x23FF) return false;
+        if (code >= 0x2500 && code <= 0x25FF) return false;
+
+        if (!this._canv) {
+            this._canv = document.createElement('canvas');
+            this._ctx = this._canv.getContext('2d');
+            this._ctx.font = '16px UnifontTerm, monospace';
+        }
+        const w = this._ctx.measureText(ch).width;
+        return w > 10;
     }
 
     handleInput(data) {
         if (!this.running) return;
+
+        if (this.activeDialog && !this.activeDialog.closed) {
+            this.activeDialog.handleKey(data);
+            if (this.activeDialog && this.activeDialog.closed) {
+                this.activeDialog = null;
+            }
+            if (this._pendingAction) {
+                const a = this._pendingAction;
+                this._pendingAction = null;
+                if (a.type === 'close-chain') {
+                    if (this.menuDialog && !this.menuDialog.closed) this.menuDialog.close();
+                    this.menuDialog = null;
+                    this.activeDialog = null;
+                    this.commands[a.cmd](a.args);
+                } else if (a.type === 'exec') {
+                    this.menuDialog = null;
+                    this.commands[a.cmd](a.args);
+                }
+            }
+            if (!this.activeDialog) this.showPrompt();
+            return;
+        }
 
         for (let i = 0; i < data.length; i++) {
             const ch = data[i];
@@ -173,7 +231,7 @@ class DemoShell {
             if (code === 0x0D || code === 0x0A) {
                 this.term.write('\r\n');
                 this.execute(this.line);
-                this.showPrompt();
+                if (!this.activeDialog) this.showPrompt();
                 continue;
             }
 
@@ -269,5 +327,42 @@ class DemoShell {
 
     print(text) {
         this.term.write(text);
+    }
+
+    _menuCmd() {
+        const menuDlg = new MenuDialog(this.term, this.menuItems, {
+            width: 44,
+            title: 'Command Menu',
+            footer: '\u2191\u2193 Navigate  \u21A9 Execute  ESC Quit',
+            visibleCount: 5,
+            stack: this.stateStack,
+            onSelect: (item) => {
+                if (item.name === 'calc') {
+                    const inputDlg = new InputDialog(this.term, {
+                        title: '\u8ACB\u8F38\u5165\u7B97\u5F0F',
+                        prompt: '\u7B97\u5F0F\uFF1A',
+                        footer: 'Enter Confirm  ESC Back',
+                        stack: this.stateStack,
+                        onConfirm: (expr) => {
+                            this._pendingAction = { type: 'close-chain', cmd: 'calc', args: [expr] };
+                        },
+                        onCancel: () => {
+                            this.activeDialog = menuDlg;
+                        }
+                    });
+                    this.activeDialog = inputDlg;
+                    inputDlg.open();
+                    return;
+                }
+                this._pendingAction = { type: 'exec', cmd: item.name, args: [] };
+                return 'close';
+            },
+            onCancel: () => {
+                this._pendingAction = null;
+            }
+        });
+        this.activeDialog = menuDlg;
+        this.menuDialog = menuDlg;
+        menuDlg.open();
     }
 }

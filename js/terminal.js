@@ -3,6 +3,46 @@ const XTERM_COLORS = [
     '#0000EE', '#CD00CD', '#00CDCD', '#E5E5E5',
     '#7F7F7F', '#FF0000', '#00FF00', '#FFFF00',
     '#5C5CFF', '#FF00FF', '#00FFFF', '#FFFFFF',
+    '#000000', '#00005f', '#000087', '#0000af', '#0000d7', '#0000ff',
+    '#005f00', '#005f5f', '#005f87', '#005faf', '#005fd7', '#005fff',
+    '#008700', '#00875f', '#008787', '#0087af', '#0087d7', '#0087ff',
+    '#00af00', '#00af5f', '#00af87', '#00afaf', '#00afd7', '#00afff',
+    '#00d700', '#00d75f', '#00d787', '#00d7af', '#00d7d7', '#00d7ff',
+    '#00ff00', '#00ff5f', '#00ff87', '#00ffaf', '#00ffd7', '#00ffff',
+    '#5f0000', '#5f005f', '#5f0087', '#5f00af', '#5f00d7', '#5f00ff',
+    '#5f5f00', '#5f5f5f', '#5f5f87', '#5f5faf', '#5f5fd7', '#5f5fff',
+    '#5f8700', '#5f875f', '#5f8787', '#5f87af', '#5f87d7', '#5f87ff',
+    '#5faf00', '#5faf5f', '#5faf87', '#5fafaf', '#5fafd7', '#5fafff',
+    '#5fd700', '#5fd75f', '#5fd787', '#5fd7af', '#5fd7d7', '#5fd7ff',
+    '#5fff00', '#5fff5f', '#5fff87', '#5fffaf', '#5fffd7', '#5fffff',
+    '#870000', '#87005f', '#870087', '#8700af', '#8700d7', '#8700ff',
+    '#875f00', '#875f5f', '#875f87', '#875faf', '#875fd7', '#875fff',
+    '#878700', '#87875f', '#878787', '#8787af', '#8787d7', '#8787ff',
+    '#87af00', '#87af5f', '#87af87', '#87afaf', '#87afd7', '#87afff',
+    '#87d700', '#87d75f', '#87d787', '#87d7af', '#87d7d7', '#87d7ff',
+    '#87ff00', '#87ff5f', '#87ff87', '#87ffaf', '#87ffd7', '#87ffff',
+    '#af0000', '#af005f', '#af0087', '#af00af', '#af00d7', '#af00ff',
+    '#af5f00', '#af5f5f', '#af5f87', '#af5faf', '#af5fd7', '#af5fff',
+    '#af8700', '#af875f', '#af8787', '#af87af', '#af87d7', '#af87ff',
+    '#afaf00', '#afaf5f', '#afaf87', '#afafaf', '#afafd7', '#afafff',
+    '#afd700', '#afd75f', '#afd787', '#afd7af', '#afd7d7', '#afd7ff',
+    '#afff00', '#afff5f', '#afff87', '#afffaf', '#afffd7', '#afffff',
+    '#d70000', '#d7005f', '#d70087', '#d700af', '#d700d7', '#d700ff',
+    '#d75f00', '#d75f5f', '#d75f87', '#d75faf', '#d75fd7', '#d75fff',
+    '#d78700', '#d7875f', '#d78787', '#d787af', '#d787d7', '#d787ff',
+    '#d7af00', '#d7af5f', '#d7af87', '#d7afaf', '#d7afd7', '#d7afff',
+    '#d7d700', '#d7d75f', '#d7d787', '#d7d7af', '#d7d7d7', '#d7d7ff',
+    '#d7ff00', '#d7ff5f', '#d7ff87', '#d7ffaf', '#d7ffd7', '#d7ffff',
+    '#ff0000', '#ff005f', '#ff0087', '#ff00af', '#ff00d7', '#ff00ff',
+    '#ff5f00', '#ff5f5f', '#ff5f87', '#ff5faf', '#ff5fd7', '#ff5fff',
+    '#ff8700', '#ff875f', '#ff8787', '#ff87af', '#ff87d7', '#ff87ff',
+    '#ffaf00', '#ffaf5f', '#ffaf87', '#ffafaf', '#ffafd7', '#ffafff',
+    '#ffd700', '#ffd75f', '#ffd787', '#ffd7af', '#ffd7d7', '#ffd7ff',
+    '#ffff00', '#ffff5f', '#ffff87', '#ffffaf', '#ffffd7', '#ffffff',
+    '#080808', '#121212', '#1c1c1c', '#262626', '#303030', '#3a3a3a',
+    '#444444', '#4e4e4e', '#585858', '#626262', '#6c6c6c', '#767676',
+    '#808080', '#8a8a8a', '#949494', '#9e9e9e', '#a8a8a8', '#b2b2b2',
+    '#bcbcbc', '#c6c6c6', '#d0d0d0', '#dadada', '#e4e4e4', '#eeeeee',
 ];
 
 class Terminal {
@@ -47,6 +87,7 @@ class Terminal {
         this.mouseX = 0;
         this.mouseY = 0;
 
+        this._cursorHidden = false;
         this._privateMarker = '';
         this._oscString = '';
         this._buf = '';
@@ -67,18 +108,40 @@ class Terminal {
 
     _isWide(ch) {
         const code = ch.charCodeAt ? ch.charCodeAt(0) : ch;
-        if (code < 0x1100) return false;
-        if (code <= 0x11FF) return true;
-        if (code >= 0x2E80 && code <= 0x9FFF) return true;
-        if (code >= 0xAC00 && code <= 0xD7AF) return true;
-        if (code >= 0xF900 && code <= 0xFAFF) return true;
-        if (code >= 0xFE10 && code <= 0xFE19) return true;
-        if (code >= 0xFE30 && code <= 0xFE6F) return true;
-        if (code >= 0xFF01 && code <= 0xFF60) return true;
-        if (code >= 0xFFE0 && code <= 0xFFE6) return true;
-        if (code >= 0x20000 && code <= 0x2FFFF) return true;
-        if (code >= 0x30000 && code <= 0x3FFFF) return true;
-        return false;
+
+        // Fast path: known CJK/fullwidth ranges
+        if (code >= 0x1100) {
+            if (code <= 0x11FF) return true;
+            if (code >= 0x2E80 && code <= 0x9FFF) return true;
+            if (code >= 0xAC00 && code <= 0xD7AF) return true;
+            if (code >= 0xF900 && code <= 0xFAFF) return true;
+            if (code >= 0xFE10 && code <= 0xFE19) return true;
+            if (code >= 0xFE30 && code <= 0xFE6F) return true;
+            if (code >= 0xFF01 && code <= 0xFF60) return true;
+            if (code >= 0xFFE0 && code <= 0xFFE6) return true;
+            if (code >= 0x20000 && code <= 0x2FFFF) return true;
+            if (code >= 0x30000 && code <= 0x3FFFF) return true;
+        }
+
+        // Basic Latin + Latin-1 Supplement are always narrow
+        if (code < 0x100) return false;
+
+        // Arrows, Miscellaneous Technical are narrow
+        if (code >= 0x2190 && code <= 0x21FF) return false;
+        if (code >= 0x2300 && code <= 0x23FF) return false;
+
+        // Box Drawing / Block Elements / Geometric Shapes are narrow
+        if (code >= 0x2500 && code <= 0x25FF) return false;
+
+        // Measure via canvas for ambiguous glyphs (e.g. Unifont makes
+        // many symbols like ✓ 16px wide even though Unicode says narrow)
+        if (!this._canv) {
+            this._canv = document.createElement('canvas');
+            this._ctx = this._canv.getContext('2d');
+            this._ctx.font = '16px UnifontTerm, monospace';
+        }
+        const w = this._ctx.measureText(ch).width;
+        return w > 10;
     }
 
     _makeCell(ch) {
@@ -243,9 +306,9 @@ class Terminal {
 
     _spanClass(fg, bg, italic, underline, crossedOut, blink, dim) {
         const parts = [];
-        if (typeof fg === 'number' && fg <= 15) parts.push('q' + fg);
+        if (typeof fg === 'number' && fg <= 255) parts.push('q' + fg);
         else parts.push('qhi');
-        if (typeof bg === 'number' && bg <= 15) parts.push('b' + bg);
+        if (typeof bg === 'number' && bg <= 255) parts.push('b' + bg);
         else parts.push('bhi');
         if (italic) parts.push('i');
         if (underline) parts.push('u');
@@ -256,6 +319,7 @@ class Terminal {
     }
 
     _renderCursor() {
+        if (this._cursorHidden) { this.cursorEl.className = 'hidden'; return; }
         const row = this.buffer[this.curY];
         if (!row || this.viewOffset !== 0 || this.curX < 0 || this.curX >= this.cols) {
             this.cursorEl.className = 'hidden';
@@ -276,8 +340,8 @@ class Terminal {
         this.cursorEl.style.fontSize = this.charHeight + 'px';
         this.cursorEl.style.lineHeight = this.charHeight + 'px';
         this.cursorEl.style.textAlign = 'center';
-        this.cursorEl.style.backgroundColor = (typeof fg === 'number' && fg <= 15) ? XTERM_COLORS[fg] : (typeof fg === 'string' ? fg : '#C0C0C0');
-        this.cursorEl.style.color = (typeof bg === 'number' && bg <= 15) ? XTERM_COLORS[bg] : (typeof bg === 'string' ? bg : '#000000');
+        this.cursorEl.style.backgroundColor = (typeof fg === 'number' && fg <= 255) ? XTERM_COLORS[fg] : (typeof fg === 'string' ? fg : '#C0C0C0');
+        this.cursorEl.style.color = (typeof bg === 'number' && bg <= 255) ? XTERM_COLORS[bg] : (typeof bg === 'string' ? bg : '#000000');
         this.cursorEl.style.fontFamily = 'UnifontTerm, monospace';
     }
 
@@ -317,44 +381,99 @@ class Terminal {
         const alt = e.altKey;
         const shift = e.shiftKey;
 
+        // --- Pass-throughs ---
         if (ctrl && key === 'v') return;
-
         if (ctrl && alt && key === 'c') return;
 
-        if (ctrl && key === 'z') { this._send('\x1A'); e.preventDefault(); return; }
-        if (ctrl && key === 'd') { this._send('\x04'); e.preventDefault(); return; }
-        if (ctrl && key === 'a') { this._send('\x01'); e.preventDefault(); return; }
-        if (ctrl && key === 'e') { this._send('\x05'); e.preventDefault(); return; }
-        if (ctrl && key === 'l') { this._send('\x0C'); e.preventDefault(); return; }
-        if (ctrl && key === 'u') { this._send('\x15'); e.preventDefault(); return; }
-        if (ctrl && key === 'k') { this._send('\x0B'); e.preventDefault(); return; }
-        if (ctrl && key === 'w') { this._send('\x17'); e.preventDefault(); return; }
-        if (ctrl && key === 'r') { this._send('\x12'); e.preventDefault(); return; }
+        // --- Copy / Paste ---
+        if ((ctrl && key === 'Insert') || (ctrl && shift && key.toLowerCase() === 'c')) {
+            e.preventDefault();
+            const sel = document.getSelection().toString();
+            if (!sel) return;
+            if (navigator.clipboard) {
+                navigator.clipboard.writeText(sel).catch(() => {});
+            } else {
+                const ta = document.createElement('textarea');
+                ta.value = sel;
+                ta.style.position = 'fixed';
+                ta.style.opacity = '0';
+                document.body.appendChild(ta);
+                ta.select();
+                document.execCommand('copy');
+                document.body.removeChild(ta);
+            }
+            return;
+        }
+        if ((shift && key === 'Insert') || (ctrl && shift && key.toLowerCase() === 'v')) {
+            if (navigator.clipboard) {
+                e.preventDefault();
+                navigator.clipboard.readText().then(text => { if (text) this._send(text); }).catch(() => {});
+            }
+            return;
+        }
 
-        if (key === 'Enter') { this._send('\r'); e.preventDefault(); return; }
+        // --- Ctrl+letter control codes ---
+        if (ctrl && !shift && key === 'c') { this._send('\x03'); e.preventDefault(); return; }
+        if (ctrl && !shift && key === 'z') { this._send('\x1A'); e.preventDefault(); return; }
+        if (ctrl && !shift && key === 'd') { this._send('\x04'); e.preventDefault(); return; }
+        if (ctrl && !shift && key === 'a') { this._send('\x01'); e.preventDefault(); return; }
+        if (ctrl && !shift && key === 'e') { this._send('\x05'); e.preventDefault(); return; }
+        if (ctrl && !shift && key === 'l') { this._send('\x0C'); e.preventDefault(); return; }
+        if (ctrl && !shift && key === 'u') { this._send('\x15'); e.preventDefault(); return; }
+        if (ctrl && !shift && key === 'k') { this._send('\x0B'); e.preventDefault(); return; }
+        if (ctrl && !shift && key === 'w') { this._send('\x17'); e.preventDefault(); return; }
+        if (ctrl && !shift && key === 'r') { this._send('\x12'); e.preventDefault(); return; }
+        if (ctrl && !shift && key === 'h') { this._send('\x08'); e.preventDefault(); return; }
+        if (ctrl && !shift && key === 't') { this._send('\x14'); e.preventDefault(); return; }
+        if (ctrl && !shift && key === 'y') { this._send('\x19'); e.preventDefault(); return; }
+        if (ctrl && !shift && key === 'n') { this._send('\x0E'); e.preventDefault(); return; }
+        if (ctrl && !shift && key === 'f') { this._send('\x06'); e.preventDefault(); return; }
+        if (ctrl && !shift && key === 'b') { this._send('\x02'); e.preventDefault(); return; }
+        if (ctrl && !shift && key === 'o') { this._send('\x0F'); e.preventDefault(); return; }
+        if (ctrl && !shift && key === 'x') { this._send('\x18'); e.preventDefault(); return; }
+
+        // --- Modifier+Backspace / Enter (before unmodified) ---
+        if (ctrl && key === 'Backspace') { this._send('\x08'); e.preventDefault(); return; }
+        if (alt && key === 'Backspace') { this._send('\x1B\x7F'); e.preventDefault(); return; }
+        if (alt && key === 'Enter') { this._send('\x1B\r'); e.preventDefault(); return; }
+
+        // --- Unmodified special keys ---
         if (key === 'Backspace') { this._send('\x7F'); e.preventDefault(); return; }
+        if (key === 'Enter') { this._send('\r'); e.preventDefault(); return; }
         if (key === 'Tab') { this._send(shift ? '\x1B[Z' : '\t'); e.preventDefault(); return; }
         if (key === 'Escape') { this._send('\x1B'); e.preventDefault(); return; }
 
-        if (key === 'ArrowUp') { this._send(this.modes.applicationCursorKeys ? '\x1BOA' : '\x1B[A'); e.preventDefault(); return; }
-        if (key === 'ArrowDown') { this._send(this.modes.applicationCursorKeys ? '\x1BOB' : '\x1B[B'); e.preventDefault(); return; }
-        if (key === 'ArrowRight') { this._send(this.modes.applicationCursorKeys ? '\x1BOC' : '\x1B[C'); e.preventDefault(); return; }
-        if (key === 'ArrowLeft') { this._send(this.modes.applicationCursorKeys ? '\x1BOD' : '\x1B[D'); e.preventDefault(); return; }
+        // --- Navigation keys with modifier support ---
+        let mod = 1;
+        if (ctrl && shift && alt) mod = 8;
+        else if (ctrl && alt) mod = 7;
+        else if (ctrl && shift) mod = 6;
+        else if (ctrl) mod = 5;
+        else if (alt && shift) mod = 4;
+        else if (alt) mod = 3;
+        else if (shift) mod = 2;
 
-        if (key === 'Home') { this._send('\x1B[H'); e.preventDefault(); return; }
-        if (key === 'End') { this._send('\x1B[F'); e.preventDefault(); return; }
-        if (key === 'Insert') { this._send('\x1B[2~'); e.preventDefault(); return; }
-        if (key === 'Delete') { this._send('\x1B[3~'); e.preventDefault(); return; }
-        if (key === 'PageUp') { this._send('\x1B[5~'); e.preventDefault(); return; }
-        if (key === 'PageDown') { this._send('\x1B[6~'); e.preventDefault(); return; }
+        const navMap = { ArrowUp: 'A', ArrowDown: 'B', ArrowRight: 'C', ArrowLeft: 'D', Home: 'H', End: 'F' };
+        const tildeMap = { Insert: '2', Delete: '3', PageUp: '5', PageDown: '6' };
 
-        const fMap = {
-            F1: '\x1BOP', F2: '\x1BOQ', F3: '\x1BOR', F4: '\x1BOS',
-            F5: '\x1B[15~', F6: '\x1B[17~', F7: '\x1B[18~', F8: '\x1B[19~',
-            F9: '\x1B[20~', F10: '\x1B[21~', F11: '\x1B[23~', F12: '\x1B[24~',
-        };
-        if (fMap[key]) { this._send(fMap[key]); e.preventDefault(); return; }
+        const dir = navMap[key];
+        if (dir) {
+            if (mod === 1) {
+                const isAppCursor = key.startsWith('Arrow') && this.modes.applicationCursorKeys;
+                this._send(isAppCursor ? '\x1BO' + dir : '\x1B[' + dir);
+            } else {
+                this._send(`\x1B[1;${mod}${dir}`);
+            }
+            e.preventDefault(); return;
+        }
 
+        const tilde = tildeMap[key];
+        if (tilde) {
+            this._send(mod === 1 ? `\x1B[${tilde}~` : `\x1B[${tilde};${mod}~`);
+            e.preventDefault(); return;
+        }
+
+        // --- Single character fallback (textarea not focused) ---
         if (key && key.length === 1 && !ctrl && !alt && !e.metaKey) {
             if (document.activeElement !== this.textarea) {
                 this._send(key);
@@ -363,17 +482,23 @@ class Terminal {
             return;
         }
 
+        // --- Alt+letter meta prefix ---
+        if (alt && !ctrl && key && key.length === 1) {
+            this._send('\x1B' + key);
+            e.preventDefault();
+            return;
+        }
+
+        // --- Scroll back / forward ---
         if (ctrl && shift && (key === '+' || key === '=')) {
             this.viewOffset = Math.max(0, this.viewOffset - 1);
             this._markAllDirty();
-            e.preventDefault();
-            return;
+            e.preventDefault(); return;
         }
         if (ctrl && key === '-') {
             this.viewOffset = Math.min(this._maxViewOffset(), this.viewOffset + 1);
             this._markAllDirty();
-            e.preventDefault();
-            return;
+            e.preventDefault(); return;
         }
     }
 
@@ -521,19 +646,16 @@ class Terminal {
         for (let i = 0; i < buf.length; i++) {
             const ch = buf[i];
             const code = ch.charCodeAt ? ch.charCodeAt(0) : ch;
-            if (code >= 0x30 && code <= 0x3F) {
-                n += ch;
-                continue;
-            }
             if (code >= 0x40 && code <= 0x7E) {
+                if (n && (n[0] === '?' || n[0] === '>' || n[0] === '!' || n[0] === '<' || n[0] === "'")) {
+                    privateMarker = n[0];
+                    n = n.substring(1);
+                }
                 const parts = n ? n.split(';').map(Number) : [];
                 this._dispatchCSI(privateMarker, parts, ch);
                 return;
             }
-            if (ch === '?' || ch === '>' || ch === '!' || ch === '<' || ch === "'") {
-                privateMarker += ch;
-                continue;
-            }
+            n += ch;
         }
     }
 
@@ -580,7 +702,7 @@ class Terminal {
         const p0 = params[0] || 0;
         switch (finalByte) {
             case 'h':
-                if (p0 === 25) return;
+                if (p0 === 25) { this._cursorHidden = false; return; }
                 if (p0 === 1000) { this.mouseMode = 1000; return; }
                 if (p0 === 1002) { this.mouseMode = 1002; return; }
                 if (p0 === 1003) { this.mouseMode = 1003; return; }
@@ -590,7 +712,7 @@ class Terminal {
                 if (p0 === 2000) { this.modes.bracketedPaste = true; return; }
                 break;
             case 'l':
-                if (p0 === 25) return;
+                if (p0 === 25) { this._cursorHidden = true; return; }
                 if (p0 === 1000 || p0 === 1002 || p0 === 1003) { this.mouseMode = 0; return; }
                 if (p0 === 1006) { this.mouseMode = 0; return; }
                 if (p0 === 1049) { this._normalBuffer(); return; }

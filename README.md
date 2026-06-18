@@ -23,8 +23,10 @@ Renders entirely via DOM `<span>` elements with CSS color classes — no Canvas.
 
 | Component | Approach |
 |-----------|----------|
-| **Rendering** | DOM `<span>` elements grouped by color classes (`q{fgb} b{bg}`, inline styles for >16 colors) |
+| **Rendering** | DOM `<span>` elements grouped by CSS color classes (`q{0-255} b{0-255}`, truecolor via `qhi`/`bhi` + inline style) |
 | **Buffer** | 2D array of cell objects (`{ch, fg, bg, bold, italic, ..., width}`) + scrollback array; CJK chars have `width: 2` with a `width: 0` continuation cell |
+| **Dialog** | Reusable dialog framework (`Dialog`, `MenuDialog`, `InputDialog`) in `dialog.js` with `StateStack` for nested state management |
+| **StateStack** | Each dialog push saves buffer area, cursor position, and cursor visibility; pop restores all three — handles arbitrary nesting |
 | **Input** | `keydown` on `document` (always captured) + hidden `<textarea>` for IME |
 | **Focus** | Automatic refocus on `keyup` (ptt.cc pattern) |
 | **Cursor** | Absolutely-positioned `<div>` with CSS `blink` animation |
@@ -33,10 +35,12 @@ Renders entirely via DOM `<span>` elements with CSS color classes — no Canvas.
 
 ## Fonts
 
-Uses [Unifont](https://unifoundry.com/unifont/) bitmap font, subsetted into three WOFF2 files:
-- **EASCII** — Basic Latin + common symbols
-- **JA** — Hiragana + Katakana
-- **ZH** — Traditional Chinese CJK
+Uses [Unifont](https://unifoundry.com/unifont/) bitmap font, subsetted into five WOFF2 files:
+- **eascii-core** — Basic Latin + common symbols (8px advance)
+- **eascii-ext** — Extended symbols (⏎ ✓ ✖, 16px advance)
+- **ja** — Hiragana + Katakana
+- **zh-common** — Common CJK
+- **zh-rare** — Rare CJK
 
 ## Usage
 
@@ -47,11 +51,12 @@ Open `index.html` in a modern browser.
 | Command | Description |
 |---------|-------------|
 | `help` | List available commands |
+| `menu` | Open command menu dialog |
 | `clear` | Clear screen |
 | `echo` | Print arguments |
 | `date` | Show current date/time |
 | `fortune` | Display a random fortune |
-| `ascii` | Show ANSI color chart |
+| `ascii` | Show ANSI color chart (16 color + 256 color cube) |
 | `neofetch` | Display system info |
 | `cowsay` | Let a cow speak |
 | `calc` | Evaluate arithmetic expression |
