@@ -8,17 +8,20 @@
 </head>
 <body>
 <div id="terminal-wrapper">
-    <canvas id="terminal-canvas"></canvas>
+    <div id="screen"></div>
+    <textarea id="hidden-input" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"></textarea>
     <div id="scanlines"></div>
     <div id="overscan"></div>
 </div>
 <script src="terminal.js"></script>
+<script src="shell.js"></script>
 <script>
 (function() {
-    const canvas = document.getElementById('terminal-canvas');
-    const term = new Terminal(canvas, {
+    const term = new Terminal(document.getElementById('screen'), {
         cols: 80,
         rows: 25,
+        charWidth: 8,
+        charHeight: 16,
     });
 
     const shell = new DemoShell(term);

@@ -56,11 +56,65 @@ html, body {
     border: 1px solid #1a1a1a;
 }
 
-#terminal-canvas {
-    display: block;
-    image-rendering: pixelated;
-    image-rendering: crisp-edges;
+#screen {
+    position: absolute;
+    top: 0;
+    left: 0;
+    font-family: UnifontTerm, monospace;
+    font-size: 16px;
+    line-height: 16px;
+    white-space: pre;
+    color: #C0C0C0;
+    overflow: hidden;
     cursor: text;
+}
+
+#screen .row {
+    display: block;
+    height: 16px;
+    line-height: 16px;
+    white-space: pre;
+}
+
+#screen .row span {
+    display: inline;
+    white-space: pre;
+}
+
+#cursor {
+    position: absolute;
+    z-index: 1;
+    pointer-events: none;
+    animation: cursor-blink 1s step-end infinite;
+    white-space: pre;
+}
+
+#cursor.hidden {
+    animation: none;
+    opacity: 0;
+}
+
+@keyframes cursor-blink {
+    0%, 50% { opacity: 1; }
+    51%, 100% { opacity: 0; }
+}
+
+#hidden-input {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    opacity: 0.001;
+    pointer-events: none;
+    resize: none;
+    border: none;
+    outline: none;
+    padding: 0;
+    margin: 0;
+    font-family: inherit;
+    font-size: inherit;
+    line-height: inherit;
 }
 
 #scanlines {
@@ -91,3 +145,41 @@ html, body {
     pointer-events: none;
     z-index: 3;
 }
+
+.q0  { color: #000000; }
+.q1  { color: #CD0000; }
+.q2  { color: #00CD00; }
+.q3  { color: #CDCD00; }
+.q4  { color: #0000EE; }
+.q5  { color: #CD00CD; }
+.q6  { color: #00CDCD; }
+.q7  { color: #E5E5E5; }
+.q8  { color: #7F7F7F; }
+.q9  { color: #FF0000; }
+.q10 { color: #00FF00; }
+.q11 { color: #FFFF00; }
+.q12 { color: #5C5CFF; }
+.q13 { color: #FF00FF; }
+.q14 { color: #00FFFF; }
+.q15 { color: #FFFFFF; }
+
+.b0  { background-color: #000000; }
+.b1  { background-color: #CD0000; }
+.b2  { background-color: #00CD00; }
+.b3  { background-color: #CDCD00; }
+.b4  { background-color: #0000EE; }
+.b5  { background-color: #CD00CD; }
+.b6  { background-color: #00CDCD; }
+.b7  { background-color: #E5E5E5; }
+.b8  { background-color: #7F7F7F; }
+.b9  { background-color: #FF0000; }
+.b10 { background-color: #00FF00; }
+.b11 { background-color: #FFFF00; }
+.b12 { background-color: #5C5CFF; }
+.b13 { background-color: #FF00FF; }
+.b14 { background-color: #00FFFF; }
+.b15 { background-color: #FFFFFF; }
+
+.i { font-style: italic; }
+.u { text-decoration: underline; }
+.s { text-decoration: line-through; }

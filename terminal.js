@@ -1,1120 +1,290 @@
-function isWide(ch) {
-    const c = ch.charCodeAt(0);
-    if (c >= 0x1100 && c <= 0x115F) return true;
-    if (c === 0x2329 || c === 0x232A) return true;
-    if (c >= 0x2E80 && c <= 0x303E) return true;
-    if (c >= 0x3040 && c <= 0x33BF) return true;
-    if (c >= 0x3400 && c <= 0x4DBF) return true;
-    if (c >= 0x4E00 && c <= 0xA4CF) return true;
-    if (c >= 0xAC00 && c <= 0xD7A3) return true;
-    if (c >= 0xF900 && c <= 0xFAFF) return true;
-    if (c >= 0xFE10 && c <= 0xFE19) return true;
-    if (c >= 0xFE30 && c <= 0xFE6F) return true;
-    if (c >= 0xFF01 && c <= 0xFF60) return true;
-    if (c >= 0xFFE0 && c <= 0xFFE6) return true;
-    return false;
-}
+const XTERM_COLORS = [
+    '#000000', '#CD0000', '#00CD00', '#CDCD00',
+    '#0000EE', '#CD00CD', '#00CDCD', '#E5E5E5',
+    '#7F7F7F', '#FF0000', '#00FF00', '#FFFF00',
+    '#5C5CFF', '#FF00FF', '#00FFFF', '#FFFFFF',
+];
 
 class Terminal {
-    constructor(canvas, opts = {}) {
+    constructor(container, opts = {}) {
+        this.container = container;
         this.cols = opts.cols || 80;
         this.rows = opts.rows || 25;
-        this.cw = 8;
-        this.ch = 16;
-        this.canvas = canvas;
-        this.ctx = canvas.getContext('2d');
-
-        canvas.width = this.cols * this.cw;
-        canvas.height = this.rows * this.ch;
-
-        this.buffer = [];
-        this.cursor = { x: 0, y: 0 };
-        this.savedCursor = { x: 0, y: 0, attr: null };
-        this.scrollTop = 0;
-        this.scrollBottom = this.rows - 1;
-        this.originMode = false;
-        this.autoWrap = true;
-        this.insertMode = false;
-        this.reverseVideo = false;
-        this.applicationCursorKeys = false;
-        this.cursorVisible = true;
-        this.cursorStyle = 1;
-        this.cursorBlink = true;
-        this.blinkPhase = true;
-        this.bracketedPaste = false;
-
-        this.tabStops = new Set();
-        for (let i = 0; i < this.cols; i += 8) this.tabStops.add(i);
-
-        this.state = 'ground';
-        this.paramBuffer = '';
-        this.params = [];
-        this.privateMarker = '';
-        this.oscString = '';
-
-        this.mouseMode = 0;
-        this.mouseSGR = false;
-        this.mousePixels = false;
-        this.mouseBtn = 0;
-        this.mouseTracking = false;
-        this.mouseEvent = null;
-
-        this.scrollback = [];
-        this.scrollbackMax = 1000;
-        this.scrollbackOffset = 0;
-
-        this.initColors();
-        this.attr = { fg: 7, bg: 0, bold: false, dim: false, italic: false, underline: false, blink: false, inverse: false, conceal: false, crossedOut: false };
-
-        this.dirty = true;
-        this._loopRunning = false;
-        this._lastBlink = 0;
-        this._loop = null;
+        this.charWidth = opts.charWidth || 8;
+        this.charHeight = opts.charHeight || 16;
+        this.scrollbackSize = 2000;
 
         this.onData = null;
         this.onResize = null;
+
+        this.textarea = document.getElementById('hidden-input');
         this._isComposing = false;
 
-        this.textarea = document.createElement('textarea');
-        this.textarea.setAttribute('aria-hidden', 'true');
-        this.textarea.tabIndex = 0;
-        this.textarea.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;padding:0;margin:0;border:none;outline:none;resize:none;background:transparent;color:transparent;caret-color:transparent;opacity:0.001;pointer-events:none;z-index:1';
-        canvas.parentNode.insertBefore(this.textarea, canvas.nextSibling);
+        this.buffer = [];
+        this.scrollback = [];
+        this.viewOffset = 0;
+        this.dirtyRows = new Set();
 
-        this.clearBuffer();
-        this.bindEvents();
+        this.curX = 0;
+        this.curY = 0;
+        this.savedX = -1;
+        this.savedY = -1;
+        this.scrollTop = 0;
+        this.scrollBottom = this.rows - 1;
 
-        if (!opts.noAutoRender) this.startRenderLoop();
+        this.attr = this._defaultAttr();
+
+        this.modes = {
+            applicationCursorKeys: false,
+            bracketedPaste: false,
+        };
+
+        this.mouseMode = 0;
+        this.mouseBtn = 0;
+        this.mouseX = 0;
+        this.mouseY = 0;
+
+        this._privateMarker = '';
+        this._oscString = '';
+        this._buf = '';
+        this._state = 'ground';
+
+        this._initDOM();
+        this._initBuffer();
+        this._bindEvents();
+
+        if (!opts.noAutoRender) this._startRenderLoop();
     }
 
-    initColors() {
-        this.colors = [
-            '#000000', '#AA0000', '#00AA00', '#AA5500',
-            '#0000AA', '#AA00AA', '#00AAAA', '#AAAAAA',
-            '#555555', '#FF5555', '#55FF55', '#FFFF55',
-            '#5555FF', '#FF55FF', '#55FFFF', '#FFFFFF',
-        ];
-        this.cubeColors = [];
-        for (let r = 0; r < 6; r++) {
-            for (let g = 0; g < 6; g++) {
-                for (let b = 0; b < 6; b++) {
-                    const red   = r === 0 ? 0 : r * 40 + 55;
-                    const green = g === 0 ? 0 : g * 40 + 55;
-                    const blue  = b === 0 ? 0 : b * 40 + 55;
-                    this.cubeColors.push(`rgb(${red},${green},${blue})`);
-                }
-            }
+    _defaultAttr() {
+        return { fg: 7, bg: 0, bold: false, dim: false, italic: false, underline: false, blink: false, inverse: false, conceal: false, crossedOut: false };
+    }
+
+    _makeCell(ch) {
+        return {
+            ch: ch || ' ',
+            fg: this.attr.fg,
+            bg: this.attr.bg,
+            bold: this.attr.bold,
+            dim: this.attr.dim,
+            italic: this.attr.italic,
+            underline: this.attr.underline,
+            blink: this.attr.blink,
+            inverse: this.attr.inverse,
+            conceal: this.attr.conceal,
+            crossedOut: this.attr.crossedOut,
+        };
+    }
+
+    _initDOM() {
+        this.container.style.width = (this.cols * this.charWidth) + 'px';
+        this.container.style.height = (this.rows * this.charHeight) + 'px';
+        this.container.style.position = 'absolute';
+        this.container.style.top = '0';
+        this.container.style.left = '0';
+
+        this.cursorEl = document.createElement('div');
+        this.cursorEl.id = 'cursor';
+        this.container.appendChild(this.cursorEl);
+
+        this.rowEls = [];
+        for (let i = 0; i < this.rows; i++) {
+            const row = document.createElement('div');
+            row.className = 'row';
+            this.container.appendChild(row);
+            this.rowEls.push(row);
         }
-        this.grayColors = [];
-        for (let i = 0; i < 24; i++) {
-            const v = i * 10 + 8;
-            this.grayColors.push(`rgb(${v},${v},${v})`);
+    }
+
+    _initBuffer() {
+        this.buffer = [];
+        for (let i = 0; i < this.rows; i++) {
+            this.buffer.push(this._emptyRow());
         }
+        this.scrollback = [];
+        this.viewOffset = 0;
+        this.curX = 0;
+        this.curY = 0;
+        this.attr = this._defaultAttr();
+        this._markAllDirty();
     }
 
-    getColor(n) {
-        if (n < 0) n = 0;
-        if (n > 255) n = 255;
-        if (n < 16) return this.colors[n];
-        if (n < 232) return this.cubeColors[n - 16];
-        return this.grayColors[n - 232];
-    }
-
-    createRow() {
+    _emptyRow() {
         const row = new Array(this.cols);
         for (let i = 0; i < this.cols; i++) {
-            row[i] = { char: ' ', fg: 7, bg: 0, bold: false, dim: false, italic: false, underline: false, blink: false, inverse: false, conceal: false, crossedOut: false, dw: false };
+            row[i] = this._makeCell(' ');
         }
         return row;
     }
 
-    clearBuffer() {
-        this.buffer = [];
-        for (let y = 0; y < this.rows; y++) this.buffer.push(this.createRow());
-        this.cursor.x = 0;
-        this.cursor.y = 0;
-        this.dirty = true;
-    }
-
-    focus() {
-        this.textarea.focus();
-    }
-
-    startRenderLoop() {
-        if (this._loopRunning) return;
+    _startRenderLoop() {
         this._loopRunning = true;
         const loop = () => {
             if (!this._loopRunning) return;
-            const now = Date.now();
-            if (now - this._lastBlink > 500) {
-                this.blinkPhase = !this.blinkPhase;
-                this._lastBlink = now;
-                this.dirty = true;
-            }
-            if (this.dirty) {
-                this.render();
-                this.dirty = false;
-            }
-            this._loop = requestAnimationFrame(loop);
+            this._render();
+            requestAnimationFrame(loop);
         };
-        this._loop = requestAnimationFrame(loop);
+        requestAnimationFrame(loop);
     }
 
     stopRenderLoop() {
         this._loopRunning = false;
-        if (this._loop) {
-            cancelAnimationFrame(this._loop);
-            this._loop = null;
-        }
     }
 
-    render() {
-        const ctx = this.ctx;
-        const cw = this.cw, ch = this.ch;
-        const cols = this.cols, rows = this.rows;
-        const attr = this.attr;
-
-        let visibleY0 = 0;
-        let visibleY1 = rows;
-        let buffer = this.buffer;
-
-        if (this.scrollbackOffset > 0) {
-            const sbLen = this.scrollback.length;
-            if (this.scrollbackOffset <= sbLen) {
-                visibleY0 = 0;
-                visibleY1 = rows;
-                buffer = this.getScrollbackView();
-            }
-        }
-
-        ctx.imageSmoothingEnabled = false;
-        ctx.font = `${ch}px 'UnifontTerm', monospace`;
-        ctx.textBaseline = 'top';
-
-        for (let y = 0; y < rows; y++) {
-            const row = buffer[y];
-            if (!row) continue;
-            for (let x = 0; x < cols; x++) {
-                const cell = row[x];
-                if (!cell) continue;
-                if (cell.dw && cell.char === '') continue;
-
-                let cellW = cell.dw ? cw * 2 : cw;
-                let fgNum = cell.fg;
-                let bgNum = cell.bg;
-
-                if (cell.inverse) {
-                    const tmp = fgNum; fgNum = bgNum; bgNum = tmp;
-                }
-                if (cell.conceal) {
-                    fgNum = bgNum;
-                }
-
-                let fgColor;
-                if (cell.bold && fgNum < 8) {
-                    fgColor = this.getColor(fgNum + 8);
-                } else if (cell.dim) {
-                    const base = this.getColor(fgNum);
-                    fgColor = base;
-                } else {
-                    fgColor = this.getColor(fgNum);
-                }
-                const bgColor = this.getColor(bgNum);
-
-                ctx.fillStyle = bgColor;
-                ctx.fillRect(x * cw, y * ch, cellW, ch);
-
-                if (cell.char !== ' ' && cell.char !== '') {
-                    ctx.fillStyle = fgColor;
-                    if (cell.bold) {
-                        ctx.font = `bold ${ch}px 'UnifontTerm', monospace`;
-                    } else {
-                        ctx.font = `${ch}px 'UnifontTerm', monospace`;
-                    }
-                    ctx.fillText(cell.char, x * cw, y * ch);
-
-                    if (cell.underline) {
-                        ctx.fillStyle = fgColor;
-                        ctx.fillRect(x * cw, y * ch + ch - 2, cellW, 1);
-                    }
-                    if (cell.crossedOut) {
-                        ctx.fillStyle = fgColor;
-                        ctx.fillRect(x * cw, y * ch + Math.floor(ch / 2), cellW, 1);
-                    }
-                    if (cell.blink && this.blinkPhase) {
-                        ctx.fillStyle = bgColor;
-                        ctx.fillRect(x * cw, y * ch, cellW, ch);
-                    }
-                }
-            }
-        }
-
-        if (this.cursorVisible && this.scrollbackOffset === 0 && (this.cursorBlink ? this.blinkPhase : true)) {
-            const cx = this.cursor.x;
-            const cy = this.cursor.y;
-            if (cx >= 0 && cx < cols && cy >= 0 && cy < rows) {
-                const cell = buffer[cy] && buffer[cy][cx];
-                if (cell && cell.dw && cell.char === '') {
-                    /* skip continuation cells for cursor */
-                } else {
-                    const cellW = (cell && cell.dw) ? cw * 2 : cw;
-                    const cursorColor = this.getColor(7);
-
-                    if (this.cursorStyle === 3 || this.cursorStyle === 4) {
-                        ctx.fillStyle = cursorColor;
-                        ctx.fillRect(cx * cw, cy * ch + ch - 2, cellW, 2);
-                    } else {
-                        ctx.fillStyle = cursorColor;
-                        ctx.fillRect(cx * cw, cy * ch, cellW, ch);
-
-                        if (cell && cell.char !== ' ' && cell.char !== '') {
-                            let fgNum = cell.fg;
-                            if (cell.inverse) {
-                                fgNum = cell.bg;
-                            }
-                            const invColor = this.getColor(0);
-                            ctx.fillStyle = invColor;
-                            ctx.font = cell.bold
-                                ? `bold ${ch}px 'UnifontTerm', monospace`
-                                : `${ch}px 'UnifontTerm', monospace`;
-                            ctx.fillText(cell.char, cx * cw, cy * ch);
-                        }
-                    }
-                }
-            }
-        }
-
-        ctx.imageSmoothingEnabled = true;
+    _render() {
+        this._renderRows();
+        this._renderCursor();
     }
 
-    getScrollbackView() {
-        const sb = this.scrollback;
-        const offset = Math.min(this.scrollbackOffset, sb.length);
-        const view = [];
-        const sbStart = sb.length - offset;
-        for (let i = sbStart; i < sb.length; i++) {
-            view.push(sb[i]);
+    _renderRows() {
+        for (const rowIdx of this.dirtyRows) {
+            if (rowIdx < 0 || rowIdx >= this.rows) continue;
+            this._renderRow(rowIdx);
         }
-        for (let i = 0; i < this.rows && i + offset < this.rows + offset; i++) {
-            if (sbStart + i < sb.length) continue;
-            const bi = i - (sb.length - sbStart);
-            if (bi >= 0 && bi < this.buffer.length) {
-                view.push(this.buffer[bi]);
-            }
-        }
-        while (view.length < this.rows) {
-            view.push(this.createRow());
-        }
-        return view.slice(0, this.rows);
+        this.dirtyRows.clear();
     }
 
-    scrollbackPush(row) {
-        this.scrollback.push(row);
-        if (this.scrollback.length > this.scrollbackMax) {
-            this.scrollback.shift();
-        }
-    }
-
-    scrollbackUp(lines) {
-        const max = this.scrollback.length;
-        this.scrollbackOffset = Math.min(this.scrollbackOffset + lines, max);
-        this.dirty = true;
-    }
-
-    scrollbackDown(lines) {
-        this.scrollbackOffset = Math.max(this.scrollbackOffset - lines, 0);
-        this.dirty = true;
-    }
-
-    write(data) {
-        for (let i = 0; i < data.length; i++) {
-            this.processChar(data.charCodeAt(i));
-        }
-    }
-
-    processChar(code) {
-        switch (this.state) {
-            case 'ground': return this.processGround(code);
-            case 'escape': return this.processEscape(code);
-            case 'csi':    return this.processCSI(code);
-            case 'osc':    return this.processOSC(code);
-            case 'oscStringEnd': return this.processOSCEnd(code);
-            case 'charset': return this.processCharset(code);
-            case 'dcs':    return this.processDCS(code);
-        }
-    }
-
-    processGround(code) {
-        if (code === 0x1B) { this.state = 'escape'; return; }
-        if (code === 0x0A) { this.newLine(); return; }
-        if (code === 0x0D) { this.carriageReturn(); return; }
-        if (code === 0x08) { this.backspace(); return; }
-        if (code === 0x09) { this.tab(); return; }
-        if (code === 0x07) { return; }
-        if (code === 0x0B || code === 0x0C) { this.newLine(); return; }
-        if (code < 0x20) return;
-        this.printChar(String.fromCharCode(code));
-    }
-
-    processEscape(code) {
-        if (code === 0x5B) {
-            this.state = 'csi';
-            this.paramBuffer = '';
-            this.params = [];
-            this.privateMarker = '';
+    _renderRow(rowIdx) {
+        const dataRow = this._getDataRow(rowIdx);
+        if (!dataRow) {
+            this.rowEls[rowIdx].textContent = '';
             return;
         }
-        if (code === 0x5D) {
-            this.state = 'osc';
-            this.oscString = '';
-            return;
-        }
-        if (code === 0x50) {
-            this.state = 'dcs';
-            this.paramBuffer = '';
-            this.params = [];
-            this.privateMarker = '';
-            return;
-        }
-        if (code === 0x37) {
-            this.savedCursor = { x: this.cursor.x, y: this.cursor.y, attr: { ...this.attr } };
-            this.state = 'ground';
-            return;
-        }
-        if (code === 0x38) {
-            if (this.savedCursor && this.savedCursor.attr) {
-                this.cursor.x = this.savedCursor.x;
-                this.cursor.y = this.savedCursor.y;
-                this.attr = { ...this.savedCursor.attr };
-            }
-            this.state = 'ground';
-            return;
-        }
-        if (code === 0x63) {
-            this.resetToInitial();
-            this.state = 'ground';
-            return;
-        }
-        if (code === 0x28 || code === 0x29 || code === 0x2A || code === 0x2B) {
-            this.state = 'charset';
-            this.paramBuffer = String.fromCharCode(code);
-            return;
-        }
-        if (code === 0x4D) { this.reverseIndex(); this.state = 'ground'; return; }
-        if (code === 0x44) { this.index(); this.state = 'ground'; return; }
-        if (code === 0x45) { this.nextLine(); this.state = 'ground'; return; }
-        if (code === 0x48) { this.setTabStop(); this.state = 'ground'; return; }
-        if (code === 0x46) { this.cursor.x = 0; this.cursor.y = 0; this.state = 'ground'; return; }
-        if (code === 0x4E) { this.state = 'ground'; return; }
-        if (code === 0x4F) { this.state = 'ground'; return; }
-        if (code === 0x3E) { this.state = 'ground'; return; }
-        if (code === 0x3D) { this.state = 'ground'; return; }
-        if (code === 0x3F) { this.state = 'ground'; return; }
-        this.state = 'ground';
+        this.rowEls[rowIdx].innerHTML = this._rowToHTML(dataRow);
     }
 
-    processCSI(code) {
-        if (code >= 0x30 && code <= 0x39) {
-            this.paramBuffer += String.fromCharCode(code);
-            return;
+    _getDataRow(displayRow) {
+        if (this.viewOffset === 0) {
+            return this.buffer[displayRow];
         }
-        if (code === 0x3B) {
-            this.params.push(this.paramBuffer ? parseInt(this.paramBuffer) || 0 : 0);
-            this.paramBuffer = '';
-            return;
+        const idx = this.scrollback.length - this.viewOffset + displayRow;
+        if (idx >= 0 && idx < this.scrollback.length) {
+            return this.scrollback[idx];
         }
-        if (code === 0x3A) {
-            this.params.push(-1);
-            this.paramBuffer = '';
-            return;
-        }
-        if (code === 0x3F) { this.privateMarker = '?'; return; }
-        if (code === 0x3E) { this.privateMarker = '>'; return; }
-        if (code === 0x21 || code === 0x22 || code === 0x23 || code === 0x24 || code === 0x25 || code === 0x26 || code === 0x27 || code === 0x2A || code === 0x2B) {
-            return;
-        }
-        if (code >= 0x40 && code <= 0x7E) {
-            this.params.push(this.paramBuffer ? parseInt(this.paramBuffer) || 0 : 0);
-            const finalByte = String.fromCharCode(code);
-            this.handleCSI(this.params, finalByte);
-            this.state = 'ground';
-            return;
-        }
-        this.state = 'ground';
-    }
-
-    processOSC(code) {
-        if (code === 0x07) {
-            this.handleOSC(this.oscString);
-            this.state = 'ground';
-            return;
-        }
-        if (code === 0x1B) {
-            this.state = 'oscStringEnd';
-            return;
-        }
-        if (code >= 0x20 && code <= 0x7E || code === 0x3B || code === 0x3A) {
-            this.oscString += String.fromCharCode(code);
-        }
-    }
-
-    processOSCEnd(code) {
-        if (code === 0x5C) this.handleOSC(this.oscString);
-        this.state = 'ground';
-    }
-
-    processCharset(code) {
-        this.state = 'ground';
-    }
-
-    processDCS(code) {
-        if (code >= 0x30 && code <= 0x39) {
-            this.paramBuffer += String.fromCharCode(code);
-            return;
-        }
-        if (code === 0x3B) {
-            this.params.push(parseInt(this.paramBuffer) || 0);
-            this.paramBuffer = '';
-            return;
-        }
-        if (code >= 0x40 && code <= 0x7E) {
-            this.params.push(parseInt(this.paramBuffer) || 0);
-            this.handleDCS(this.params, String.fromCharCode(code));
-            this.state = 'ground';
-            return;
-        }
-        this.state = 'ground';
-    }
-
-    handleCSI(params, finalByte) {
-        const p = (n, def) => (params && params.length > n && params[n] !== undefined) ? params[n] : def;
-        const p0 = p(0, 1);
-        const p1 = p(1, 1);
-
-        switch (finalByte) {
-            case 'A': this.cursorUp(p0); break;
-            case 'B': this.cursorDown(p0); break;
-            case 'C': this.cursorForward(p0); break;
-            case 'D': this.cursorBack(p0); break;
-            case 'E': this.cursorNextLine(p0); break;
-            case 'F': this.cursorPrevLine(p0); break;
-            case 'G': this.cursorHorizontalAbsolute(p0); break;
-            case 'H': this.cursorPosition(p1, p0); break;
-            case 'f': this.cursorPosition(p1, p0); break;
-            case 'J': this.eraseDisplay(p0); break;
-            case 'K': this.eraseLine(p0); break;
-            case 'L': this.insertLines(p0); break;
-            case 'M': this.deleteLines(p0); break;
-            case 'P': this.deleteChars(p0); break;
-            case '@': this.insertChars(p0); break;
-            case 'X': this.eraseChars(p0); break;
-            case 'S': this.scrollUp(p0); break;
-            case 'T': this.scrollDown2(p0); break;
-            case 'd': this.cursorLineAbsolute(p0); break;
-            case 'e': this.cursorLineDown(p0); break;
-            case 'm': this.setGraphicsRendition(params); break;
-            case 'h': this.privateMarker === '?' ? this.setPrivateMode(params, true) : this.setMode(params, true); break;
-            case 'l': this.privateMarker === '?' ? this.setPrivateMode(params, false) : this.setMode(params, false); break;
-            case 's': this.savedCursor = { x: this.cursor.x, y: this.cursor.y, attr: { ...this.attr } }; break;
-            case 'u': if (this.savedCursor && this.savedCursor.attr) { this.cursor.x = this.savedCursor.x; this.cursor.y = this.savedCursor.y; this.attr = { ...this.savedCursor.attr }; } break;
-            case 'n': this.deviceStatusReport(p0); break;
-            case 'c': this.deviceAttributes(); break;
-            case 't': break;
-            case 'q': this.cursorStyle = p0 || 1; break;
-            case 'r': this.setScrollRegion(p1, p0); break;
-        }
-    }
-
-    handleOSC(str) {
-        const parts = str.split(';');
-        const cmd = parseInt(parts[0]);
-        const val = parts.slice(1).join(';');
-
-        switch (cmd) {
-            case 0: case 1: case 2:
-                break;
-            case 4:
-                if (parts.length >= 3) {
-                    const idx = parseInt(parts[1]);
-                    const color = parts[2];
-                    if (!isNaN(idx) && idx >= 0 && idx <= 255) {
-                        this.setColorDirect(idx, color);
-                    }
-                }
-                break;
-            case 10:
-                if (parts[1]) this.defaultFg = this.parseColor(parts[1]);
-                break;
-            case 11:
-                if (parts[1]) this.defaultBg = this.parseColor(parts[1]);
-                break;
-        }
-    }
-
-    handleDCS(params, finalByte) {
-    }
-
-    setColorDirect(idx, colorStr) {
-        if (colorStr.startsWith('#')) {
-            if (idx < 16) this.colors[idx] = colorStr;
-        } else if (colorStr.startsWith('rgb:')) {
-            if (idx < 16) {
-                const parts = colorStr.slice(4).split('/');
-                if (parts.length === 3) {
-                    const r = parseInt(parts[0], 16) * 17;
-                    const g = parseInt(parts[1], 16) * 17;
-                    const b = parseInt(parts[2], 16) * 17;
-                    this.colors[idx] = `rgb(${r},${g},${b})`;
-                }
-            }
-        }
-    }
-
-    parseColor(str) {
-        if (str.startsWith('#')) return str;
-        if (str.startsWith('rgb:')) {
-            const parts = str.slice(4).split('/');
-            if (parts.length === 3) {
-                const r = parseInt(parts[0], 16) * 17;
-                const g = parseInt(parts[1], 16) * 17;
-                const b = parseInt(parts[2], 16) * 17;
-                return `rgb(${r},${g},${b})`;
-            }
+        if (idx >= this.scrollback.length) {
+            return this.buffer[idx - this.scrollback.length];
         }
         return null;
     }
 
-    resetToInitial() {
-        this.cursor.x = 0;
-        this.cursor.y = 0;
-        this.scrollTop = 0;
-        this.scrollBottom = this.rows - 1;
-        this.originMode = false;
-        this.autoWrap = true;
-        this.insertMode = false;
-        this.reverseVideo = false;
-        this.applicationCursorKeys = false;
-        this.cursorVisible = true;
-        this.cursorStyle = 1;
-        this.mouseMode = 0;
-        this.mouseSGR = false;
-        this.mousePixels = false;
-        this.attr = { fg: 7, bg: 0, bold: false, dim: false, italic: false, underline: false, blink: false, inverse: false, conceal: false, crossedOut: false };
-        this.clearBuffer();
-        this.dirty = true;
-    }
+    _rowToHTML(row) {
+        let html = '';
+        let i = 0;
+        while (i < row.length) {
+            const cell = row[i];
+            let fg = cell.fg;
+            let bg = cell.bg;
+            const bold = cell.bold;
+            const dim = cell.dim;
+            const inverse = cell.inverse;
 
-    printChar(ch) {
-        if (this.cursor.x >= this.cols) {
-            if (this.autoWrap) {
-                this.carriageReturn();
-                this.newLine();
-            } else {
-                this.cursor.x = this.cols - 1;
+            if (inverse) {
+                const tmp = fg; fg = bg; bg = tmp;
             }
-        }
+            if (bold && typeof fg === 'number' && fg < 8) fg += 8;
 
-        const wide = isWide(ch);
-        const y = this.cursor.y;
-        const x = this.cursor.x;
-        const row = this.buffer[y];
-
-        if (wide && x >= this.cols - 1) {
-            this.carriageReturn();
-            this.newLine();
-        }
-
-        if (this.insertMode) {
-            for (let i = this.cols - 1; i > x; i--) {
-                if (i > 0) {
-                    row[i] = { ...row[i - 1] };
-                }
+            const cls = this._spanClass(fg, bg, cell.italic, cell.underline, cell.crossedOut, cell.blink, dim);
+            let j = i + 1;
+            while (j < row.length) {
+                const c = row[j];
+                let cf = c.fg;
+                let cb = c.bg;
+                const b = c.bold;
+                const d = c.dim;
+                const inv = c.inverse;
+                if (inv) { const t = cf; cf = cb; cb = t; }
+                if (b && typeof cf === 'number' && cf < 8) cf += 8;
+                if (cf !== fg || cb !== bg || c.bold !== bold || c.dim !== dim ||
+                    c.italic !== cell.italic || c.underline !== cell.underline ||
+                    c.crossedOut !== cell.crossedOut || c.blink !== cell.blink ||
+                    c.inverse !== inverse) break;
+                j++;
             }
-        }
 
-        const cw = wide ? 2 : 1;
-        row[x] = { char: ch, ...this.attr, dw: wide };
-        if (wide && x + 1 < this.cols) {
-            row[x + 1] = { char: '', fg: this.attr.fg, bg: this.attr.bg, bold: false, dim: false, italic: false, underline: false, blink: false, inverse: false, conceal: false, crossedOut: false, dw: true };
-        }
-
-        this.cursor.x += cw;
-        this.dirty = true;
-    }
-
-    newLine() {
-        if (this.cursor.y >= this.scrollBottom) {
-            this.scroll();
-        } else {
-            this.cursor.y++;
-        }
-        this.dirty = true;
-    }
-
-    carriageReturn() {
-        this.cursor.x = 0;
-        this.dirty = true;
-    }
-
-    backspace() {
-        if (this.cursor.x > 0) {
-            this.cursor.x--;
-        }
-        this.dirty = true;
-    }
-
-    tab() {
-        for (let t = this.cursor.x + 1; t < this.cols; t++) {
-            if (this.tabStops.has(t)) {
-                this.cursor.x = t;
-                this.dirty = true;
-                return;
+            let text = '';
+            for (let k = i; k < j; k++) {
+                const ch = row[k].ch;
+                if (ch === '&') text += '&amp;';
+                else if (ch === '<') text += '&lt;';
+                else if (ch === '>') text += '&gt;';
+                else if (ch === '"') text += '&quot;';
+                else text += ch;
             }
+
+            html += '<span class="' + cls + '">' + text + '</span>';
+            i = j;
         }
-        this.cursor.x = this.cols - 1;
-        this.dirty = true;
+        return html;
     }
 
-    index() {
-        if (this.cursor.y >= this.scrollBottom) {
-            this.scroll();
-        } else {
-            this.cursor.y++;
+    _spanClass(fg, bg, italic, underline, crossedOut, blink, dim) {
+        const parts = [];
+        if (typeof fg === 'number' && fg <= 15) parts.push('q' + fg);
+        else parts.push('qhi');
+        if (typeof bg === 'number' && bg <= 15) parts.push('b' + bg);
+        else parts.push('bhi');
+        if (italic) parts.push('i');
+        if (underline) parts.push('u');
+        if (crossedOut) parts.push('s');
+        if (blink) parts.push('blink');
+        if (dim) parts.push('dim');
+        return parts.join(' ');
+    }
+
+    _renderCursor() {
+        const row = this.buffer[this.curY];
+        if (!row || this.viewOffset !== 0 || this.curX < 0 || this.curX >= this.cols) {
+            this.cursorEl.className = 'hidden';
+            return;
         }
-        this.dirty = true;
+
+        const cell = row[this.curX];
+        let fg = cell.fg;
+        let bg = cell.bg;
+        if (cell.inverse) { const t = fg; fg = bg; bg = t; }
+
+        this.cursorEl.className = '';
+        this.cursorEl.textContent = cell.ch;
+        this.cursorEl.style.left = (this.curX * this.charWidth) + 'px';
+        this.cursorEl.style.top = (this.curY * this.charHeight) + 'px';
+        this.cursorEl.style.width = this.charWidth + 'px';
+        this.cursorEl.style.height = this.charHeight + 'px';
+        this.cursorEl.style.fontSize = this.charHeight + 'px';
+        this.cursorEl.style.lineHeight = this.charHeight + 'px';
+        this.cursorEl.style.textAlign = 'center';
+        this.cursorEl.style.backgroundColor = (typeof fg === 'number' && fg <= 15) ? XTERM_COLORS[fg] : (typeof fg === 'string' ? fg : '#C0C0C0');
+        this.cursorEl.style.color = (typeof bg === 'number' && bg <= 15) ? XTERM_COLORS[bg] : (typeof bg === 'string' ? bg : '#000000');
+        this.cursorEl.style.fontFamily = 'UnifontTerm, monospace';
     }
 
-    reverseIndex() {
-        if (this.cursor.y <= this.scrollTop) {
-            this.scrollDown();
-        } else {
-            this.cursor.y--;
-        }
-        this.dirty = true;
-    }
-
-    nextLine() {
-        this.carriageReturn();
-        this.index();
-    }
-
-    scroll() {
-        const st = this.scrollTop;
-        const sb = this.scrollBottom;
-        const scrolledRow = this.buffer[st];
-        this.scrollbackPush(scrolledRow);
-        for (let y = st; y < sb; y++) {
-            this.buffer[y] = this.buffer[y + 1];
-        }
-        this.buffer[sb] = this.createRow();
-        this.dirty = true;
-    }
-
-    scrollDown() {
-        const st = this.scrollTop;
-        const sb = this.scrollBottom;
-        for (let y = sb; y > st; y--) {
-            this.buffer[y] = this.buffer[y - 1];
-        }
-        this.buffer[st] = this.createRow();
-        this.dirty = true;
-    }
-
-    cursorUp(n) {
-        n = Math.max(1, n || 1);
-        this.cursor.y = Math.max(this.scrollTop, this.cursor.y - n);
-        this.dirty = true;
-    }
-
-    cursorDown(n) {
-        n = Math.max(1, n || 1);
-        this.cursor.y = Math.min(this.scrollBottom, this.cursor.y + n);
-        this.dirty = true;
-    }
-
-    cursorForward(n) {
-        n = Math.max(1, n || 1);
-        this.cursor.x = Math.min(this.cols - 1, this.cursor.x + n);
-        this.dirty = true;
-    }
-
-    cursorBack(n) {
-        n = Math.max(1, n || 1);
-        this.cursor.x = Math.max(0, this.cursor.x - n);
-        this.dirty = true;
-    }
-
-    cursorNextLine(n) {
-        n = Math.max(1, n || 1);
-        this.cursor.y = Math.min(this.scrollBottom, this.cursor.y + n);
-        this.cursor.x = 0;
-        this.dirty = true;
-    }
-
-    cursorPrevLine(n) {
-        n = Math.max(1, n || 1);
-        this.cursor.y = Math.max(this.scrollTop, this.cursor.y - n);
-        this.cursor.x = 0;
-        this.dirty = true;
-    }
-
-    cursorHorizontalAbsolute(n) {
-        this.cursor.x = Math.max(0, Math.min(this.cols - 1, (n || 1) - 1));
-        this.dirty = true;
-    }
-
-    cursorPosition(row, col) {
-        const r = (row || 1) - 1;
-        const c = (col || 1) - 1;
-        if (this.originMode) {
-            this.cursor.y = Math.max(this.scrollTop, Math.min(this.scrollBottom, this.scrollTop + r));
-        } else {
-            this.cursor.y = Math.max(0, Math.min(this.rows - 1, r));
-        }
-        this.cursor.x = Math.max(0, Math.min(this.cols - 1, c));
-        this.dirty = true;
-    }
-
-    cursorLineAbsolute(n) {
-        this.cursor.y = Math.max(0, Math.min(this.rows - 1, (n || 1) - 1));
-        this.dirty = true;
-    }
-
-    cursorLineDown(n) {
-        n = Math.max(1, n || 1);
-        this.cursor.y = Math.min(this.rows - 1, this.cursor.y + n);
-        this.dirty = true;
-    }
-
-    eraseDisplay(n) {
-        n = n || 0;
-        switch (n) {
-            case 0:
-                this.eraseFromCursorToEnd();
-                break;
-            case 1:
-                this.eraseFromStartToCursor();
-                break;
-            case 2: case 3:
-                for (let y = 0; y < this.rows; y++) {
-                    for (let x = 0; x < this.cols; x++) {
-                        this.buffer[y][x] = { char: ' ', fg: this.attr.fg, bg: this.attr.bg, bold: false, dim: false, italic: false, underline: false, blink: false, inverse: false, conceal: false, crossedOut: false, dw: false };
-                    }
-                }
-                break;
-        }
-        this.dirty = true;
-    }
-
-    eraseFromCursorToEnd() {
-        const x = this.cursor.x, y = this.cursor.y;
-        for (let cx = x; cx < this.cols; cx++) {
-            this.buffer[y][cx] = { char: ' ', ...this.attr, dw: false };
-        }
-        for (let cy = y + 1; cy < this.rows; cy++) {
-            for (let cx = 0; cx < this.cols; cx++) {
-                this.buffer[cy][cx] = { char: ' ', ...this.attr, dw: false };
-            }
-        }
-    }
-
-    eraseFromStartToCursor() {
-        const x = this.cursor.x, y = this.cursor.y;
-        for (let cx = 0; cx <= x; cx++) {
-            this.buffer[y][cx] = { char: ' ', ...this.attr, dw: false };
-        }
-        for (let cy = 0; cy < y; cy++) {
-            for (let cx = 0; cx < this.cols; cx++) {
-                this.buffer[cy][cx] = { char: ' ', ...this.attr, dw: false };
-            }
-        }
-    }
-
-    eraseLine(n) {
-        n = n || 0;
-        const y = this.cursor.y;
-        switch (n) {
-            case 0:
-                for (let x = this.cursor.x; x < this.cols; x++) {
-                    this.buffer[y][x] = { char: ' ', ...this.attr, dw: false };
-                }
-                break;
-            case 1:
-                for (let x = 0; x <= this.cursor.x; x++) {
-                    this.buffer[y][x] = { char: ' ', ...this.attr, dw: false };
-                }
-                break;
-            case 2:
-                for (let x = 0; x < this.cols; x++) {
-                    this.buffer[y][x] = { char: ' ', ...this.attr, dw: false };
-                }
-                break;
-        }
-        this.dirty = true;
-    }
-
-    insertChars(n) {
-        n = Math.max(1, n || 1);
-        const y = this.cursor.y;
-        const x = this.cursor.x;
-        const row = this.buffer[y];
-        for (let i = this.cols - 1; i >= x + n; i--) {
-            row[i] = { ...row[i - n] };
-        }
-        for (let i = x; i < Math.min(x + n, this.cols); i++) {
-            row[i] = { char: ' ', fg: 7, bg: 0, bold: false, dim: false, italic: false, underline: false, blink: false, inverse: false, conceal: false, crossedOut: false, dw: false };
-        }
-        this.dirty = true;
-    }
-
-    deleteChars(n) {
-        n = Math.max(1, n || 1);
-        const y = this.cursor.y;
-        const x = this.cursor.x;
-        const row = this.buffer[y];
-        for (let i = x; i < this.cols - n; i++) {
-            row[i] = { ...row[i + n] };
-        }
-        for (let i = Math.max(x, this.cols - n); i < this.cols; i++) {
-            row[i] = { char: ' ', fg: 7, bg: 0, bold: false, dim: false, italic: false, underline: false, blink: false, inverse: false, conceal: false, crossedOut: false, dw: false };
-        }
-        this.dirty = true;
-    }
-
-    insertLines(n) {
-        n = Math.max(1, n || 1);
-        const st = this.cursor.y;
-        const sb = this.scrollBottom;
-        if (st < this.scrollTop) return;
-        if (st > sb) return;
-        for (let i = 0; i < n; i++) {
-            for (let y = sb; y > st; y--) {
-                this.buffer[y] = this.buffer[y - 1];
-            }
-            this.buffer[st] = this.createRow();
-        }
-        this.dirty = true;
-    }
-
-    deleteLines(n) {
-        n = Math.max(1, n || 1);
-        const st = this.cursor.y;
-        const sb = this.scrollBottom;
-        if (st < this.scrollTop) return;
-        if (st > sb) return;
-        for (let i = 0; i < n; i++) {
-            for (let y = st; y < sb; y++) {
-                this.buffer[y] = this.buffer[y + 1];
-            }
-            this.buffer[sb] = this.createRow();
-        }
-        this.dirty = true;
-    }
-
-    eraseChars(n) {
-        n = Math.max(1, n || 1);
-        const y = this.cursor.y;
-        const x = this.cursor.x;
-        const row = this.buffer[y];
-        for (let i = x; i < Math.min(x + n, this.cols); i++) {
-            row[i] = { char: ' ', ...this.attr, dw: false };
-        }
-        this.dirty = true;
-    }
-
-    scrollUp(n) {
-        n = Math.max(1, n || 1);
-        for (let i = 0; i < n; i++) this.scroll();
-        this.dirty = true;
-    }
-
-    scrollDown2(n) {
-        n = Math.max(1, n || 1);
-        for (let i = 0; i < n; i++) this.scrollDown();
-        this.dirty = true;
-    }
-
-    setGraphicsRendition(params) {
-        if (!params || params.length === 0) {
-            params = [0];
-        }
-        for (let i = 0; i < params.length; i++) {
-            const p = params[i];
-            switch (p) {
-                case 0:
-                    this.attr = { fg: 7, bg: 0, bold: false, dim: false, italic: false, underline: false, blink: false, inverse: false, conceal: false, crossedOut: false };
-                    break;
-                case 1: this.attr.bold = true; break;
-                case 2: this.attr.dim = true; break;
-                case 3: this.attr.italic = true; break;
-                case 4: this.attr.underline = true; break;
-                case 5: case 6: this.attr.blink = true; break;
-                case 7: this.attr.inverse = true; break;
-                case 8: this.attr.conceal = true; break;
-                case 9: this.attr.crossedOut = true; break;
-                case 21: case 22: this.attr.bold = false; this.attr.dim = false; break;
-                case 23: this.attr.italic = false; break;
-                case 24: this.attr.underline = false; break;
-                case 25: this.attr.blink = false; break;
-                case 27: this.attr.inverse = false; break;
-                case 28: this.attr.conceal = false; break;
-                case 29: this.attr.crossedOut = false; break;
-                case 30: case 31: case 32: case 33: case 34: case 35: case 36: case 37:
-                    this.attr.fg = p - 30;
-                    break;
-                case 38:
-                    if (i + 2 < params.length && params[i + 1] === 5) {
-                        this.attr.fg = params[i + 2];
-                        i += 2;
-                    } else if (i + 4 < params.length && params[i + 1] === 2) {
-                        i += 4;
-                    }
-                    break;
-                case 39:
-                    this.attr.fg = 7;
-                    break;
-                case 40: case 41: case 42: case 43: case 44: case 45: case 46: case 47:
-                    this.attr.bg = p - 40;
-                    break;
-                case 48:
-                    if (i + 2 < params.length && params[i + 1] === 5) {
-                        this.attr.bg = params[i + 2];
-                        i += 2;
-                    } else if (i + 4 < params.length && params[i + 1] === 2) {
-                        i += 4;
-                    }
-                    break;
-                case 49:
-                    this.attr.bg = 0;
-                    break;
-                case 90: case 91: case 92: case 93: case 94: case 95: case 96: case 97:
-                    this.attr.fg = p - 82;
-                    break;
-                case 100: case 101: case 102: case 103: case 104: case 105: case 106: case 107:
-                    this.attr.bg = p - 92;
-                    break;
-            }
-        }
-        this.dirty = true;
-    }
-
-    setMode(params, state) {
-    }
-
-    setPrivateMode(params, state) {
-        for (let i = 0; i < params.length; i++) {
-            const p = params[i];
-            switch (p) {
-                case 1: this.applicationCursorKeys = state; break;
-                case 3: break;
-                case 6: this.originMode = state; if (state) { this.cursor.x = 0; this.cursor.y = this.scrollTop; } else { this.cursor.x = 0; this.cursor.y = 0; } break;
-                case 7: this.autoWrap = state; break;
-                case 12: this.cursorBlink = state; break;
-                case 25: this.cursorVisible = state; break;
-                case 47: break;
-                case 1000: this.mouseMode = state ? 1000 : 0; this.updateMouseHandler(); break;
-                case 1001: if (state) this.mouseMode = 1001; else this.mouseMode = 0; this.updateMouseHandler(); break;
-                case 1002: this.mouseMode = state ? 1002 : 0; this.updateMouseHandler(); break;
-                case 1003: this.mouseMode = state ? 1003 : 0; this.updateMouseHandler(); break;
-                case 1006: this.mouseSGR = state; break;
-                case 1016: this.mousePixels = state; break;
-                case 2004: this.bracketedPaste = state; break;
-                case 1047: case 1048: case 1049: break;
-            }
-        }
-    }
-
-    setScrollRegion(top, bottom) {
-        const t = Math.max(0, Math.min(this.rows - 1, (top || 1) - 1));
-        const b = Math.max(t + 1, Math.min(this.rows - 1, (bottom || this.rows) - 1));
-        this.scrollTop = t;
-        this.scrollBottom = b;
-        this.cursor.x = 0;
-        this.cursor.y = this.originMode ? this.scrollTop : 0;
-        this.dirty = true;
-    }
-
-    deviceStatusReport(n) {
-        if (n === 5 && this.onData) {
-            this.onData('\x1B[0n');
-        } else if (n === 6 && this.onData) {
-            const row = this.cursor.y + 1;
-            const col = this.cursor.x + 1;
-            this.onData(`\x1B[${row};${col}R`);
-        }
-    }
-
-    deviceAttributes() {
-        if (this.onData) {
-            this.onData('\x1B[?1;2c');
-        }
-    }
-
-    setTabStop() {
-        this.tabStops.add(this.cursor.x);
-    }
-
-    clearTabStop() {
-        this.tabStops.delete(this.cursor.x);
-    }
-
-    clearAllTabStops() {
-        this.tabStops.clear();
-    }
-
-    updateMouseHandler() {
-        const enabled = this.mouseMode > 0;
-        if (enabled !== this.mouseTracking) {
-            this.mouseTracking = enabled;
-            this.mouseBtn = 0;
-        }
-    }
-
-    bindEvents() {
-        this._keyHandler = this.handleKeyDown.bind(this);
-        this._beforeInputHandler = this.handleBeforeInput.bind(this);
-        this._inputHandler = this.handleInput.bind(this);
-        this._wheelHandler = this.handleWheel.bind(this);
-        this._mouseDownHandler = this.handleMouseDown.bind(this);
-        this._mouseUpHandler = this.handleMouseUp.bind(this);
-        this._mouseMoveHandler = this.handleMouseMove.bind(this);
-        this._contextHandler = (e) => e.preventDefault();
-        this._pasteHandler = this.handlePaste.bind(this);
-        this._compEndHandler = this.handleCompositionEnd.bind(this);
+    _bindEvents() {
+        this._keydownHandler = (e) => this._onKeyDown(e);
+        this._beforeInputHandler = (e) => this._onBeforeInput(e);
+        this._keyupHandler = (e) => this._onKeyUp(e);
         this._compStartHandler = () => { this._isComposing = true; };
+        this._compEndHandler = (e) => this._onCompositionEnd(e);
+        this._pasteHandler = (e) => this._onPaste(e);
+        this._wheelHandler = (e) => this._onWheel(e);
+        this._mouseDownHandler = (e) => this._onMouseDown(e);
+        this._mouseUpHandler = (e) => this._onMouseUp(e);
+        this._mouseMoveHandler = (e) => this._onMouseMove(e);
+        this._contextHandler = (e) => e.preventDefault();
 
-        this.textarea.addEventListener('keydown', this._keyHandler);
+        document.addEventListener('keydown', this._keydownHandler);
         this.textarea.addEventListener('beforeinput', this._beforeInputHandler);
-        this.textarea.addEventListener('input', this._inputHandler);
-        this.textarea.addEventListener('compositionend', this._compEndHandler);
+        document.addEventListener('keyup', this._keyupHandler);
         this.textarea.addEventListener('compositionstart', this._compStartHandler);
+        this.textarea.addEventListener('compositionend', this._compEndHandler);
         this.textarea.addEventListener('paste', this._pasteHandler);
-        this.canvas.addEventListener('wheel', this._wheelHandler, { passive: true });
-        this.canvas.addEventListener('mousedown', this._mouseDownHandler);
+        this.container.addEventListener('wheel', this._wheelHandler, { passive: true });
+        this.container.addEventListener('mousedown', this._mouseDownHandler);
         document.addEventListener('mouseup', this._mouseUpHandler);
         document.addEventListener('mousemove', this._mouseMoveHandler);
-        this.canvas.addEventListener('contextmenu', this._contextHandler);
+        this.container.addEventListener('contextmenu', this._contextHandler);
     }
 
-    destroy() {
-        this.textarea.removeEventListener('keydown', this._keyHandler);
-        this.textarea.removeEventListener('beforeinput', this._beforeInputHandler);
-        this.textarea.removeEventListener('input', this._inputHandler);
-        this.textarea.removeEventListener('compositionend', this._compEndHandler);
-        this.textarea.removeEventListener('compositionstart', this._compStartHandler);
-        this.textarea.removeEventListener('paste', this._pasteHandler);
-        this.canvas.removeEventListener('wheel', this._wheelHandler);
-        this.canvas.removeEventListener('mousedown', this._mouseDownHandler);
-        document.removeEventListener('mouseup', this._mouseUpHandler);
-        document.removeEventListener('mousemove', this._mouseMoveHandler);
-        this.canvas.removeEventListener('contextmenu', this._contextHandler);
-        this.textarea.remove();
-        this.stopRenderLoop();
-    }
-
-    handleKeyDown(e) {
+    _onKeyDown(e) {
         if (!this.onData) return;
-        if (document.activeElement !== this.textarea) return;
         if (this._isComposing || e.isComposing) return;
         if (e.ctrlKey && e.key === ' ') return;
 
@@ -1125,133 +295,670 @@ class Terminal {
 
         if (ctrl && key === 'v') return;
 
-        if (ctrl && (key === 'c' || key === 'C')) {
-            if (this.mouseMode > 0 && this.mouseSGR) return;
-            this.onData('\x03');
-            e.preventDefault();
-            this.clearTextarea();
-            return;
-        }
+        if (ctrl && alt && key === 'c') return;
 
-        if (ctrl && key === 'z') { this.onData('\x1A'); e.preventDefault(); this.clearTextarea(); return; }
-        if (ctrl && key === 'd') { this.onData('\x04'); e.preventDefault(); this.clearTextarea(); return; }
-        if (ctrl && key === 'a') { this.onData('\x01'); e.preventDefault(); this.clearTextarea(); return; }
-        if (ctrl && key === 'e') { this.onData('\x05'); e.preventDefault(); this.clearTextarea(); return; }
-        if (ctrl && key === 'l') { this.onData('\x0C'); e.preventDefault(); this.clearTextarea(); return; }
-        if (ctrl && key === 'u') { this.onData('\x15'); e.preventDefault(); this.clearTextarea(); return; }
-        if (ctrl && key === 'k') { this.onData('\x0B'); e.preventDefault(); this.clearTextarea(); return; }
-        if (ctrl && key === 'w') { this.onData('\x17'); e.preventDefault(); this.clearTextarea(); return; }
-        if (ctrl && key === 'r') { this.onData('\x12'); e.preventDefault(); this.clearTextarea(); return; }
+        if (ctrl && key === 'z') { this._send('\x1A'); e.preventDefault(); return; }
+        if (ctrl && key === 'd') { this._send('\x04'); e.preventDefault(); return; }
+        if (ctrl && key === 'a') { this._send('\x01'); e.preventDefault(); return; }
+        if (ctrl && key === 'e') { this._send('\x05'); e.preventDefault(); return; }
+        if (ctrl && key === 'l') { this._send('\x0C'); e.preventDefault(); return; }
+        if (ctrl && key === 'u') { this._send('\x15'); e.preventDefault(); return; }
+        if (ctrl && key === 'k') { this._send('\x0B'); e.preventDefault(); return; }
+        if (ctrl && key === 'w') { this._send('\x17'); e.preventDefault(); return; }
+        if (ctrl && key === 'r') { this._send('\x12'); e.preventDefault(); return; }
 
-        if (key === 'Enter') { this.onData('\r'); e.preventDefault(); this.clearTextarea(); return; }
-        if (key === 'Backspace') { this.onData('\x7F'); e.preventDefault(); this.clearTextarea(); return; }
-        if (key === 'Tab') { this.onData(shift ? '\x1B[Z' : '\t'); e.preventDefault(); this.clearTextarea(); return; }
-        if (key === 'Escape') { this.onData('\x1B'); e.preventDefault(); this.clearTextarea(); return; }
+        if (key === 'Enter') { this._send('\r'); e.preventDefault(); return; }
+        if (key === 'Backspace') { this._send('\x7F'); e.preventDefault(); return; }
+        if (key === 'Tab') { this._send(shift ? '\x1B[Z' : '\t'); e.preventDefault(); return; }
+        if (key === 'Escape') { this._send('\x1B'); e.preventDefault(); return; }
 
-        if (key === 'ArrowUp') { this.onData(this.applicationCursorKeys ? '\x1BOA' : '\x1B[A'); e.preventDefault(); this.clearTextarea(); return; }
-        if (key === 'ArrowDown') { this.onData(this.applicationCursorKeys ? '\x1BOB' : '\x1B[B'); e.preventDefault(); this.clearTextarea(); return; }
-        if (key === 'ArrowRight') { this.onData(this.applicationCursorKeys ? '\x1BOC' : '\x1B[C'); e.preventDefault(); this.clearTextarea(); return; }
-        if (key === 'ArrowLeft') { this.onData(this.applicationCursorKeys ? '\x1BOD' : '\x1B[D'); e.preventDefault(); this.clearTextarea(); return; }
+        if (key === 'ArrowUp') { this._send(this.modes.applicationCursorKeys ? '\x1BOA' : '\x1B[A'); e.preventDefault(); return; }
+        if (key === 'ArrowDown') { this._send(this.modes.applicationCursorKeys ? '\x1BOB' : '\x1B[B'); e.preventDefault(); return; }
+        if (key === 'ArrowRight') { this._send(this.modes.applicationCursorKeys ? '\x1BOC' : '\x1B[C'); e.preventDefault(); return; }
+        if (key === 'ArrowLeft') { this._send(this.modes.applicationCursorKeys ? '\x1BOD' : '\x1B[D'); e.preventDefault(); return; }
 
-        if (key === 'Home') { this.onData('\x1B[H'); e.preventDefault(); this.clearTextarea(); return; }
-        if (key === 'End') { this.onData('\x1B[F'); e.preventDefault(); this.clearTextarea(); return; }
-        if (key === 'Insert') { this.onData('\x1B[2~'); e.preventDefault(); this.clearTextarea(); return; }
-        if (key === 'Delete') { this.onData('\x1B[3~'); e.preventDefault(); this.clearTextarea(); return; }
-        if (key === 'PageUp') { this.onData('\x1B[5~'); e.preventDefault(); this.clearTextarea(); return; }
-        if (key === 'PageDown') { this.onData('\x1B[6~'); e.preventDefault(); this.clearTextarea(); return; }
+        if (key === 'Home') { this._send('\x1B[H'); e.preventDefault(); return; }
+        if (key === 'End') { this._send('\x1B[F'); e.preventDefault(); return; }
+        if (key === 'Insert') { this._send('\x1B[2~'); e.preventDefault(); return; }
+        if (key === 'Delete') { this._send('\x1B[3~'); e.preventDefault(); return; }
+        if (key === 'PageUp') { this._send('\x1B[5~'); e.preventDefault(); return; }
+        if (key === 'PageDown') { this._send('\x1B[6~'); e.preventDefault(); return; }
 
-        if (key.startsWith('F') && key.length <= 3) {
-            const fnum = parseInt(key.slice(1));
-            const fMap = {
-                1: '\x1BOP', 2: '\x1BOQ', 3: '\x1BOR', 4: '\x1BOS',
-                5: '\x1B[15~', 6: '\x1B[17~', 7: '\x1B[18~', 8: '\x1B[19~',
-                9: '\x1B[20~', 10: '\x1B[21~', 11: '\x1B[23~', 12: '\x1B[24~',
-            };
-            if (fMap[fnum]) { this.onData(fMap[fnum]); e.preventDefault(); this.clearTextarea(); return; }
-        }
+        const fMap = {
+            F1: '\x1BOP', F2: '\x1BOQ', F3: '\x1BOR', F4: '\x1BOS',
+            F5: '\x1B[15~', F6: '\x1B[17~', F7: '\x1B[18~', F8: '\x1B[19~',
+            F9: '\x1B[20~', F10: '\x1B[21~', F11: '\x1B[23~', F12: '\x1B[24~',
+        };
+        if (fMap[key]) { this._send(fMap[key]); e.preventDefault(); return; }
 
-        if (ctrl && key.length === 1) {
-            const code = key.toUpperCase().charCodeAt(0);
-            if (code >= 65 && code <= 90) {
-                this.onData(String.fromCharCode(code - 64));
+        if (key && key.length === 1 && !ctrl && !alt && !e.metaKey) {
+            if (document.activeElement !== this.textarea) {
+                this._send(key);
                 e.preventDefault();
-                this.clearTextarea();
-                return;
             }
-        }
-
-        if (alt && key.length === 1) {
-            this.onData('\x1B' + key);
-            e.preventDefault();
-            this.clearTextarea();
             return;
         }
 
-        if (key.length === 1) return;
+        if (ctrl && shift && (key === '+' || key === '=')) {
+            this.viewOffset = Math.max(0, this.viewOffset - 1);
+            this._markAllDirty();
+            e.preventDefault();
+            return;
+        }
+        if (ctrl && key === '-') {
+            this.viewOffset = Math.min(this._maxViewOffset(), this.viewOffset + 1);
+            this._markAllDirty();
+            e.preventDefault();
+            return;
+        }
     }
 
-    clearTextarea() {
-        this.textarea.value = '';
-    }
-
-    handleBeforeInput(e) {
+    _onBeforeInput(e) {
         if (this._isComposing) return;
         if (!this.onData || !e.data) return;
         if (e.inputType === 'insertText') {
-            this.onData(e.data);
+            this._send(e.data);
             e.preventDefault();
-            this.clearTextarea();
         }
     }
 
-    handleInput(e) {
+    _onKeyUp(e) {
         if (this._isComposing) return;
-        if (!this.onData) return;
-        const val = this.textarea.value;
-        if (!val) return;
-        this.onData(val);
-        this.clearTextarea();
+        const code = e.keyCode;
+        if (code === 16 || code === 17 || code === 18 || code === 91) return;
+        if (code > 15) this._focusInput();
     }
 
-    handleCompositionEnd(e) {
+    _onCompositionEnd(e) {
         this._isComposing = false;
         if (!this.onData) return;
-        if (e.data) this.onData(e.data);
-        this.clearTextarea();
+        if (e.data) this._send(e.data);
+        this._focusInput();
     }
 
-    handlePaste(e) {
+    _onPaste(e) {
         if (!this.onData) return;
         e.preventDefault();
         const text = e.clipboardData.getData('text/plain');
         if (!text) return;
-        if (this.bracketedPaste) {
-            this.onData('\x1B[200~' + text + '\x1B[201~');
+        if (this.modes.bracketedPaste) {
+            this._send('\x1B[200~' + text + '\x1B[201~');
         } else {
-            this.onData(text);
+            this._send(text);
         }
-        this.clearTextarea();
+        this._focusInput();
     }
 
-    handleWheel(e) {
-        if (e.deltaY < 0) {
-            this.scrollbackUp(3);
-        } else {
-            this.scrollbackDown(3);
+    _send(data) {
+        if (this.viewOffset > 0) {
+            this.viewOffset = 0;
+            this._markAllDirty();
         }
-        this.dirty = true;
+        if (this.onData) this.onData(data);
     }
 
-    handleMouseDown(e) {
+    _focusInput() {
         this.textarea.focus();
+        this.textarea.value = '';
+    }
+
+    _markAllDirty() {
+        for (let i = 0; i < this.rows; i++) this.dirtyRows.add(i);
+    }
+
+    _markRowDirty(rowIdx) {
+        if (rowIdx >= 0 && rowIdx < this.rows) this.dirtyRows.add(rowIdx);
+    }
+
+    _maxViewOffset() {
+        return Math.min(this.scrollback.length, this.scrollbackSize);
+    }
+
+    focus() {
+        this._focusInput();
+    }
+
+    write(data) {
+        if (!data) return;
+        for (let i = 0; i < data.length; i++) {
+            const ch = data[i];
+            if (this._state === 'escape') {
+                this._processEscape(ch);
+                continue;
+            }
+            if (this._state === 'csi') {
+                this._buf += ch;
+                if (ch >= '@' && ch <= '~') {
+                    this._processCSI(this._buf);
+                    this._buf = '';
+                    this._state = 'ground';
+                }
+                continue;
+            }
+            if (this._state === 'osc') {
+                if (ch === '\x07' || (ch === '\x1B' && data[i + 1] === '\\')) {
+                    if (ch === '\x1B') i++;
+                    this._processOSC(this._oscString);
+                    this._oscString = '';
+                    this._state = 'ground';
+                } else {
+                    this._oscString += ch;
+                }
+                continue;
+            }
+            if (this._state === 'dcs' || this._state === 'sos' || this._state === 'pm' || this._state === 'apc') {
+                if (ch === '\x07' || (ch === '\x1B' && data[i + 1] === '\\')) {
+                    if (ch === '\x1B') i++;
+                    this._state = 'ground';
+                }
+                continue;
+            }
+
+            const code = ch.charCodeAt ? ch.charCodeAt(0) : ch;
+            if (code === 0x1B) {
+                this._state = 'escape';
+                this._buf = '';
+                this._privateMarker = '';
+                continue;
+            }
+            if (code === 0x0D) { this._carriageReturn(); continue; }
+            if (code === 0x0A) { this._lineFeed(); continue; }
+            if (code === 0x08) { this._backspace(); continue; }
+            if (code === 0x09) { this._tab(); continue; }
+            if (code === 0x07) { continue; }
+            if (code === 0x0B || code === 0x0C) { this._lineFeed(); continue; }
+            if (code < 0x20) continue;
+
+            this._writeChar(ch);
+        }
+    }
+
+    _processEscape(ch) {
+        const code = ch.charCodeAt ? ch.charCodeAt(0) : ch;
+        if (code === 0x5B) { this._state = 'csi'; this._buf = ''; return; }
+        if (code === 0x5D) { this._state = 'osc'; this._oscString = ''; return; }
+        if (code === 0x50) { this._state = 'dcs'; return; }
+        if (code === 0x58) { this._state = 'sos'; return; }
+        if (code === 0x5E) { this._state = 'pm'; return; }
+        if (code === 0x5F) { this._state = 'apc'; return; }
+        if (code === 0x4E || code === 0x4F) { this._state = 'ground'; return; }
+        if (code === 0x44) { this._lineFeed(); this._state = 'ground'; return; }
+        if (code === 0x45) { this._lineFeed(); this._carriageReturn(); this._state = 'ground'; return; }
+        if (code === 0x48) { this._setTabStop(); this._state = 'ground'; return; }
+        if (code === 0x4D) { this._reverseIndex(); this._state = 'ground'; return; }
+        if (code === 0x5C) { this._state = 'ground'; return; }
+        if (code >= 0x40 && code <= 0x5F) { this._state = 'ground'; return; }
+        this._state = 'ground';
+    }
+
+    _processCSI(buf) {
+        let privateMarker = '';
+        let n = '';
+        for (let i = 0; i < buf.length; i++) {
+            const ch = buf[i];
+            const code = ch.charCodeAt ? ch.charCodeAt(0) : ch;
+            if (code >= 0x30 && code <= 0x3F) {
+                n += ch;
+                continue;
+            }
+            if (code >= 0x40 && code <= 0x7E) {
+                const parts = n ? n.split(';').map(Number) : [];
+                this._dispatchCSI(privateMarker, parts, ch);
+                return;
+            }
+            if (ch === '?' || ch === '>' || ch === '!' || ch === '<' || ch === "'") {
+                privateMarker += ch;
+                continue;
+            }
+        }
+    }
+
+    _dispatchCSI(privateMarker, params, finalByte) {
+        if (privateMarker === '?') {
+            this._privateCSI(params, finalByte);
+            return;
+        }
+        if (privateMarker === '>') return;
+
+        const p0 = params[0] || 0;
+        const p1 = params[1] || 0;
+
+        switch (finalByte) {
+            case 'A': this._cursorUp(Math.max(1, p0)); break;
+            case 'B': this._cursorDown(Math.max(1, p0)); break;
+            case 'C': this._cursorForward(Math.max(1, p0)); break;
+            case 'D': this._cursorBack(Math.max(1, p0)); break;
+            case 'E': this._cursorDown(Math.max(1, p0)); this.curX = 0; break;
+            case 'F': this._cursorUp(Math.max(1, p0)); this.curX = 0; break;
+            case 'G': this.curX = Math.max(0, Math.min(this.cols - 1, (p0 || 1) - 1)); break;
+            case 'H': case 'f': this._cursorPos(p0 || 1, p1 || 1); break;
+            case 'J': this._eraseDisplay(p0); break;
+            case 'K': this._eraseLine(p0); break;
+            case 'L': this._insertLines(Math.max(1, p0)); break;
+            case 'M': this._deleteLines(Math.max(1, p0)); break;
+            case 'P': this._deleteChars(Math.max(1, p0)); break;
+            case '@': this._insertChars(Math.max(1, p0)); break;
+            case 'X': this._eraseChars(Math.max(1, p0)); break;
+            case 'd': this._rowPos(p0 || 1); break;
+            case 'S': this._scrollUp(Math.max(1, p0)); break;
+            case 'T': this._scrollDown(Math.max(1, p0)); break;
+            case 'm': this._setSGR(params); break;
+            case 's': this.savedX = this.curX; this.savedY = this.curY; break;
+            case 'u': if (this.savedX >= 0) { this.curX = this.savedX; this.curY = this.savedY; this._markRowDirty(this.curY); } break;
+            case 'h': this._setMode(params); break;
+            case 'l': this._resetMode(params); break;
+            case 'n': this._deviceStatusReport(p0); break;
+            case 'q': break;
+        }
+    }
+
+    _privateCSI(params, finalByte) {
+        const p0 = params[0] || 0;
+        switch (finalByte) {
+            case 'h':
+                if (p0 === 25) return;
+                if (p0 === 1000) { this.mouseMode = 1000; return; }
+                if (p0 === 1002) { this.mouseMode = 1002; return; }
+                if (p0 === 1003) { this.mouseMode = 1003; return; }
+                if (p0 === 1006) { this.mouseMode = 1006; return; }
+                if (p0 === 1049) { this._altBuffer(); return; }
+                if (p0 === 1) { this.modes.applicationCursorKeys = true; return; }
+                if (p0 === 2000) { this.modes.bracketedPaste = true; return; }
+                break;
+            case 'l':
+                if (p0 === 25) return;
+                if (p0 === 1000 || p0 === 1002 || p0 === 1003) { this.mouseMode = 0; return; }
+                if (p0 === 1006) { this.mouseMode = 0; return; }
+                if (p0 === 1049) { this._normalBuffer(); return; }
+                if (p0 === 1) { this.modes.applicationCursorKeys = false; return; }
+                if (p0 === 2000) { this.modes.bracketedPaste = false; return; }
+                break;
+            case 'n':
+                if (p0 === 6) this._send('\x1B[' + (this.curY + 1) + ';' + (this.curX + 1) + 'R');
+                break;
+        }
+    }
+
+    _processOSC(str) {
+        const idx = str.indexOf(';');
+        if (idx < 0) return;
+        const cmd = parseInt(str.substring(0, idx), 10);
+        if (cmd === 0 || cmd === 2) {
+        } else if (cmd === 8) {
+        }
+    }
+
+    _deviceStatusReport(p0) {
+        if (p0 === 5) this._send('\x1B[0n');
+        if (p0 === 6) this._send('\x1B[' + (this.curY + 1) + ';' + (this.curX + 1) + 'R');
+    }
+
+    _setMode(params) {
+    }
+
+    _resetMode(params) {
+    }
+
+    _setSGR(params) {
+        if (params.length === 0) params = [0];
+
+        for (let i = 0; i < params.length; i++) {
+            const p = params[i];
+            if (p === 0) {
+                this.attr = this._defaultAttr();
+            } else if (p === 1) {
+                this.attr.bold = true;
+            } else if (p === 2) {
+                this.attr.dim = true;
+            } else if (p === 3) {
+                this.attr.italic = true;
+            } else if (p === 4) {
+                this.attr.underline = true;
+            } else if (p === 5 || p === 6) {
+                this.attr.blink = true;
+            } else if (p === 7) {
+                this.attr.inverse = true;
+            } else if (p === 8) {
+                this.attr.conceal = true;
+            } else if (p === 9) {
+                this.attr.crossedOut = true;
+            } else if (p === 21 || p === 22) {
+                this.attr.bold = false; this.attr.dim = false;
+            } else if (p === 23) {
+                this.attr.italic = false;
+            } else if (p === 24) {
+                this.attr.underline = false;
+            } else if (p === 25) {
+                this.attr.blink = false;
+            } else if (p === 27) {
+                this.attr.inverse = false;
+            } else if (p === 28) {
+                this.attr.conceal = false;
+            } else if (p === 29) {
+                this.attr.crossedOut = false;
+            } else if (p >= 30 && p <= 37) {
+                this.attr.fg = p - 30;
+            } else if (p === 38) {
+                i = this._parseExtendedColor(params, i, 'fg');
+            } else if (p === 39) {
+                this.attr.fg = 7;
+            } else if (p >= 40 && p <= 47) {
+                this.attr.bg = p - 40;
+            } else if (p === 48) {
+                i = this._parseExtendedColor(params, i, 'bg');
+            } else if (p === 49) {
+                this.attr.bg = 0;
+            } else if (p >= 90 && p <= 97) {
+                this.attr.fg = p - 90 + 8;
+            } else if (p >= 100 && p <= 107) {
+                this.attr.bg = p - 100 + 8;
+            }
+        }
+    }
+
+    _parseExtendedColor(params, i, type) {
+        if (i + 1 >= params.length) return i;
+        const mode = params[i + 1];
+        if (mode === 5 && i + 2 < params.length) {
+            const idx = params[i + 2];
+            if (type === 'fg') this.attr.fg = idx;
+            else this.attr.bg = idx;
+            return i + 2;
+        }
+        if (mode === 2 && i + 4 < params.length) {
+            const r = params[i + 2], g = params[i + 3], b = params[i + 4];
+            const hex = '#' + [r, g, b].map(v => Math.max(0, Math.min(255, v)).toString(16).padStart(2, '0')).join('');
+            if (type === 'fg') this.attr.fg = hex;
+            else this.attr.bg = hex;
+            return i + 4;
+        }
+        return i;
+    }
+
+    _cursorUp(n) {
+        this._markRowDirty(this.curY);
+        this.curY = Math.max(0, this.curY - n);
+        this._markRowDirty(this.curY);
+    }
+
+    _cursorDown(n) {
+        this._markRowDirty(this.curY);
+        this.curY = Math.min(this.rows - 1, this.curY + n);
+        this._markRowDirty(this.curY);
+    }
+
+    _cursorForward(n) {
+        this.curX = Math.min(this.cols - 1, this.curX + n);
+    }
+
+    _cursorBack(n) {
+        this.curX = Math.max(0, this.curX - n);
+    }
+
+    _cursorPos(row, col) {
+        this._markRowDirty(this.curY);
+        this.curY = Math.max(0, Math.min(this.rows - 1, row - 1));
+        this.curX = Math.max(0, Math.min(this.cols - 1, col - 1));
+        this._markRowDirty(this.curY);
+    }
+
+    _rowPos(row) {
+        this._markRowDirty(this.curY);
+        this.curY = Math.max(0, Math.min(this.rows - 1, row - 1));
+        this._markRowDirty(this.curY);
+    }
+
+    _lineFeed() {
+        this._markRowDirty(this.curY);
+        if (this.curY === this.scrollBottom) {
+            this._scrollUp(1);
+        } else {
+            this.curY++;
+        }
+    }
+
+    _carriageReturn() {
+        this.curX = 0;
+    }
+
+    _backspace() {
+        if (this.curX > 0) this.curX--;
+    }
+
+    _tab() {
+        const next = (this.curX + 8) & ~7;
+        this.curX = Math.min(this.cols - 1, next);
+    }
+
+    _reverseIndex() {
+        this._markRowDirty(this.curY);
+        if (this.curY === this.scrollTop) {
+            this._scrollDown(1);
+        } else {
+            this.curY--;
+        }
+        this._markRowDirty(this.curY);
+    }
+
+    _scrollUp(n) {
+        for (let i = 0; i < n; i++) {
+            if (this.scrollTop === 0) {
+                this.scrollback.push(Array.from(this.buffer[0]));
+                if (this.scrollback.length > this.scrollbackSize) {
+                    this.scrollback.shift();
+                }
+            }
+            for (let r = this.scrollTop; r < this.scrollBottom; r++) {
+                this.buffer[r] = this.buffer[r + 1];
+            }
+            this.buffer[this.scrollBottom] = this._emptyRow();
+        }
+        if (this.viewOffset > 0) this.viewOffset = Math.min(this.viewOffset, this._maxViewOffset());
+        this._markAllDirty();
+    }
+
+    _scrollDown(n) {
+        for (let i = 0; i < n; i++) {
+            for (let r = this.scrollBottom; r > this.scrollTop; r--) {
+                this.buffer[r] = this.buffer[r - 1];
+            }
+            this.buffer[this.scrollTop] = this._emptyRow();
+        }
+        this._markAllDirty();
+    }
+
+    _eraseDisplay(mode) {
+        if (mode === 0) {
+            this._eraseLine(0);
+            for (let r = this.curY + 1; r < this.rows; r++) {
+                this.buffer[r] = this._emptyRow();
+                this._markRowDirty(r);
+            }
+        } else if (mode === 1) {
+            for (let r = 0; r < this.curY; r++) {
+                this.buffer[r] = this._emptyRow();
+                this._markRowDirty(r);
+            }
+            this._eraseLine(1);
+        } else if (mode === 2 || mode === 3) {
+            for (let r = 0; r < this.rows; r++) {
+                this.buffer[r] = this._emptyRow();
+                this._markRowDirty(r);
+            }
+        }
+    }
+
+    _eraseLine(mode) {
+        const row = this.buffer[this.curY];
+        if (!row) return;
+        if (mode === 0) {
+            for (let c = this.curX; c < this.cols; c++) row[c] = this._makeCell(' ');
+        } else if (mode === 1) {
+            for (let c = 0; c <= this.curX; c++) row[c] = this._makeCell(' ');
+        } else if (mode === 2) {
+            for (let c = 0; c < this.cols; c++) row[c] = this._makeCell(' ');
+        }
+        this._markRowDirty(this.curY);
+    }
+
+    _insertLines(n) {
+        n = Math.min(n, this.rows - this.curY);
+        for (let i = 0; i < n; i++) {
+            for (let r = this.scrollBottom; r > this.curY; r--) {
+                this.buffer[r] = this.buffer[r - 1];
+            }
+            this.buffer[this.curY] = this._emptyRow();
+        }
+        this._markAllDirty();
+    }
+
+    _deleteLines(n) {
+        n = Math.min(n, this.rows - this.curY);
+        for (let i = 0; i < n; i++) {
+            for (let r = this.curY; r < this.scrollBottom; r++) {
+                this.buffer[r] = this.buffer[r + 1];
+            }
+            this.buffer[this.scrollBottom] = this._emptyRow();
+        }
+        this._markAllDirty();
+    }
+
+    _insertChars(n) {
+        const row = this.buffer[this.curY];
+        if (!row) return;
+        n = Math.min(n, this.cols - this.curX);
+        for (let c = this.cols - 1; c >= this.curX + n; c--) {
+            row[c] = row[c - n];
+        }
+        for (let c = this.curX; c < this.curX + n; c++) {
+            row[c] = this._makeCell(' ');
+        }
+        this._markRowDirty(this.curY);
+    }
+
+    _deleteChars(n) {
+        const row = this.buffer[this.curY];
+        if (!row) return;
+        n = Math.min(n, this.cols - this.curX);
+        for (let c = this.curX; c < this.cols - n; c++) {
+            row[c] = row[c + n];
+        }
+        for (let c = this.cols - n; c < this.cols; c++) {
+            row[c] = this._makeCell(' ');
+        }
+        this._markRowDirty(this.curY);
+    }
+
+    _eraseChars(n) {
+        const row = this.buffer[this.curY];
+        if (!row) return;
+        n = Math.min(n, this.cols - this.curX);
+        for (let c = this.curX; c < this.curX + n; c++) {
+            row[c] = this._makeCell(' ');
+        }
+        this._markRowDirty(this.curY);
+    }
+
+    _writeChar(ch) {
+        if (this.curX >= this.cols) {
+            this.curX = 0;
+            this._lineFeed();
+        }
+
+        const row = this.buffer[this.curY];
+        if (!row) return;
+
+        row[this.curX] = this._makeCell(ch);
+        this._markRowDirty(this.curY);
+        this.curX++;
+    }
+
+    cursorUp(n) { this._cursorUp(n); }
+    cursorDown(n) { this._cursorDown(n); }
+    cursorForward(n) { this._cursorForward(n); }
+    cursorBack(n) { this._cursorBack(n); }
+    lineFeed() { this._lineFeed(); }
+    carriageReturn() { this._carriageReturn(); }
+
+    _altBuffer() {
+        this._normalLines = this.buffer;
+        this._normalCurX = this.curX;
+        this._normalCurY = this.curY;
+        this._normalViewOffset = this.viewOffset;
+        this._saveScroll = { top: this.scrollTop, bottom: this.scrollBottom };
+
+        this.buffer = [];
+        for (let i = 0; i < this.rows; i++) this.buffer.push(this._emptyRow());
+        this.curX = 0;
+        this.curY = 0;
+        this.viewOffset = 0;
+        this.scrollTop = 0;
+        this.scrollBottom = this.rows - 1;
+        this._markAllDirty();
+    }
+
+    _normalBuffer() {
+        if (!this._normalLines) return;
+        this.buffer = this._normalLines;
+        this.curX = this._normalCurX || 0;
+        this.curY = this._normalCurY || 0;
+        this.viewOffset = this._normalViewOffset || 0;
+        if (this._saveScroll) {
+            this.scrollTop = this._saveScroll.top;
+            this.scrollBottom = this._saveScroll.bottom;
+        }
+        this._normalLines = null;
+        this._markAllDirty();
+    }
+
+    scrollbackUp(n) {
+        this.viewOffset = Math.min(this._maxViewOffset(), this.viewOffset + n);
+        this._markAllDirty();
+    }
+
+    scrollbackDown(n) {
+        this.viewOffset = Math.max(0, this.viewOffset - n);
+        this._markAllDirty();
+    }
+
+    clearBuffer() {
+        this._initBuffer();
+    }
+
+    resize(cols, rows) {
+        this.cols = cols;
+        this.rows = rows;
+        this.scrollBottom = rows - 1;
+        this.container.style.width = (cols * this.charWidth) + 'px';
+        this.container.style.height = (rows * this.charHeight) + 'px';
+        while (this.rowEls.length < rows) {
+            const row = document.createElement('div');
+            row.className = 'row';
+            this.container.appendChild(row);
+            this.rowEls.push(row);
+        }
+        while (this.rowEls.length > rows) {
+            this.container.removeChild(this.rowEls.pop());
+        }
+        this._initBuffer();
+        if (this.onResize) this.onResize(cols, rows);
+    }
+
+    _onWheel(e) {
+        if (e.deltaY < 0) this.scrollbackUp(3);
+        else this.scrollbackDown(3);
+    }
+
+    _onMouseDown(e) {
+        this._focusInput();
         if (!this.onData || this.mouseMode === 0) return;
         e.preventDefault();
 
-        const rect = this.canvas.getBoundingClientRect();
+        const rect = this.container.getBoundingClientRect();
         const x = e.clientX - rect.left;
         const y = e.clientY - rect.top;
-        const col = Math.floor(x / this.cw);
-        const row = Math.floor(y / this.ch);
+        const col = Math.floor(x / this.charWidth);
+        const row = Math.floor(y / this.charHeight);
         if (col < 0 || col >= this.cols || row < 0 || row >= this.rows) return;
 
         let btn = 0;
@@ -1268,338 +975,42 @@ class Terminal {
         this.mouseY = row;
 
         if (this.mouseMode === 9 || this.mouseMode === 1000 || this.mouseMode === 1002 || this.mouseMode === 1003) {
-            this.sendMouseEvent('M', btn, col + 1, row + 1);
+            this._sendMouseEvent('M', btn, col + 1, row + 1);
         }
     }
 
-    handleMouseUp(e) {
+    _onMouseUp(e) {
         if (!this.onData || this.mouseMode === 0) return;
         if (this.mouseMode === 1000 || this.mouseMode === 1002 || this.mouseMode === 1003) {
-            const rect = this.canvas.getBoundingClientRect();
+            const rect = this.container.getBoundingClientRect();
             const x = e.clientX - rect.left;
             const y = e.clientY - rect.top;
-            const col = Math.floor(x / this.cw);
-            const row = Math.floor(y / this.ch);
+            const col = Math.floor(x / this.charWidth);
+            const row = Math.floor(y / this.charHeight);
             if (col < 0 || col >= this.cols || row < 0 || row >= this.rows) return;
             if (this.mouseMode === 9) return;
-
             const btn = this.mouseBtn + 32;
-            this.sendMouseEvent('m', btn, col + 1, row + 1);
+            this._sendMouseEvent('m', btn, col + 1, row + 1);
         }
         this.mouseBtn = 0;
     }
 
-    handleMouseMove(e) {
-        if (!this.onData || this.mouseMode === 0) return;
-        if (this.mouseMode !== 1002 && this.mouseMode !== 1003) return;
-        if (this.mouseBtn === 0 && this.mouseMode !== 1003) return;
-
-        const rect = this.canvas.getBoundingClientRect();
+    _onMouseMove(e) {
+        if (!this.onData || this.mouseMode !== 1003) return;
+        const rect = this.container.getBoundingClientRect();
         const x = e.clientX - rect.left;
         const y = e.clientY - rect.top;
-        const col = Math.floor(x / this.cw);
-        const row = Math.floor(y / this.ch);
+        const col = Math.floor(x / this.charWidth);
+        const row = Math.floor(y / this.charHeight);
         if (col < 0 || col >= this.cols || row < 0 || row >= this.rows) return;
-        if (col === this.mouseX && row === this.mouseY) return;
-
-        this.mouseX = col;
-        this.mouseY = row;
-
-        const btn = this.mouseBtn + 32;
-        this.sendMouseEvent('M', btn, col + 1, row + 1);
+        this._sendMouseEvent('M', this.mouseBtn + 32, col + 1, row + 1);
     }
 
-    sendMouseEvent(type, btn, col, row) {
-        if (!this.onData) return;
-        if (this.mouseSGR) {
-            this.onData(`\x1B[<${btn};${col};${row}${type}`);
+    _sendMouseEvent(prefix, btn, col, row) {
+        if (this.mouseMode === 1006) {
+            this._send('\x1B[' + prefix + btn + ';' + col + ';' + row);
         } else {
-            const cb = (btn & 3) | (btn & 4 ? 4 : 0) | (btn & 8 ? 8 : 0) | (btn & 16 ? 16 : 0);
-            const cc = Math.min(col + 32, 255);
-            const cr = Math.min(row + 32, 255);
-            this.onData(`\x1B[M${String.fromCharCode(cb)}${String.fromCharCode(cc)}${String.fromCharCode(cr)}`);
+            this._send('\x1B[' + prefix + String.fromCharCode(btn + 32) + String.fromCharCode(col + 32) + String.fromCharCode(row + 32));
         }
-    }
-
-    resize(cols, rows) {
-        const newBuffer = [];
-        for (let y = 0; y < rows; y++) {
-            const row = [];
-            for (let x = 0; x < cols; x++) {
-                if (y < this.rows && x < this.cols && this.buffer[y] && this.buffer[y][x]) {
-                    row.push({ ...this.buffer[y][x] });
-                } else {
-                    row.push({ char: ' ', fg: 7, bg: 0, bold: false, dim: false, italic: false, underline: false, blink: false, inverse: false, conceal: false, crossedOut: false, dw: false });
-                }
-            }
-            newBuffer.push(row);
-        }
-
-        this.cols = cols;
-        this.rows = rows;
-        this.buffer = newBuffer;
-        this.scrollBottom = rows - 1;
-        this.cursor.x = Math.min(this.cursor.x, cols - 1);
-        this.cursor.y = Math.min(this.cursor.y, rows - 1);
-
-        this.canvas.width = cols * this.cw;
-        this.canvas.height = rows * this.ch;
-
-        this.dirty = true;
-
-        if (this.onResize) this.onResize(cols, rows);
-    }
-}
-
-class DemoShell {
-    constructor(term) {
-        this.term = term;
-        this.line = '';
-        this.history = [];
-        this.historyPos = -1;
-        this.prompt = '$ ';
-        this.promptShown = false;
-        this.running = false;
-
-        this.commands = {
-            help: () => {
-                this.print('\x1B[1;33mAvailable commands:\x1B[0m\n');
-                this.print('  help       Show this help\n');
-                this.print('  clear      Clear the screen\n');
-                this.print('  echo       Echo text\n');
-                this.print('  date       Show current date/time\n');
-                this.print('  uname      Show system info\n');
-                this.print('  neofetch   Show system information (lite)\n');
-                this.print('  cowsay     Let a cow speak\n');
-                this.print('  ascii      Show ANSI color chart\n');
-                this.print('  fortune    Show a fortune\n');
-                this.print('  calc       Simple calculator\n');
-                this.print('  exit       Exit (just for fun)\n');
-                this.print('  whoami     Show user\n');
-            },
-            clear: () => {
-                this.term.write('\x1B[2J\x1B[H');
-            },
-            echo: (args) => {
-                this.print(args.join(' ') + '\n');
-            },
-            date: () => {
-                this.print(new Date().toString() + '\n');
-            },
-            uname: () => {
-                this.print('OpenCode Terminal v1.0.0\n');
-            },
-            neofetch: () => {
-                this.print('\x1B[1;36m  OpenCodeTerm\x1B[0m\n');
-                this.print('\x1B[1;34m  -----------\x1B[0m\n');
-                this.print('  OS:     HTML5 + CSS3 + ES2024\n');
-                this.print('  Host:   Web Browser\n');
-                this.print('  Font:   Unifont 8\xC3\x9716\n');
-                this.print('  Shell:  DemoShell v1.0\n');
-                this.print('  Theme:  Green on Black\n');
-                this.print('  \x1B[1;32m\xE2\x96\x88\xE2\x96\x88\xE2\x96\x88\xE2\x96\x88\xE2\x96\x88\xE2\x96\x88\xE2\x96\x88\xE2\x96\x88\xE2\x96\x88\xE2\x96\x88\xE2\x96\x88\xE2\x96\x88\xE2\x96\x88\xE2\x96\x88\xE2\x96\x88\xE2\x96\x88\xE2\x96\x88\xE2\x96\x88\xE2\x96\x88\xE2\x96\x88\xE2\x96\x88\xE2\x96\x88\xE2\x96\x88\xE2\x96\x88\xE2\x96\x88\xE2\x96\x88\xE2\x96\x88\xE2\x96\x88\xE2\x96\x88\xE2\x96\x88\xE2\x96\x88\xE2\x96\x88\xE2\x96\x88\xE2\x96\x88\xE2\x96\x88\xE2\x96\x88\xE2\x96\x88\xE2\x96\x88\xE2\x96\x88\xE2\x96\x88\xE2\x96\x88\xE2\x96\x88\xE2\x96\x88\xE2\x96\x88\xE2\x96\x88\xE2\x96\x88\xE2\x96\x88\xE2\x96\x88\xE2\x96\x88\xE2\x96\x88\xE2\x96\x88\xE2\x96\x88\xE2\x96\x88\xE2\x96\x88\xE2\x96\x88\xE2\x96\x88\xE2\x96\x88\xE2\x96\x88\xE2\x96\x88\xE2\x96\x88\xE2\x96\x88\xE2\x96\x88\xE2\x96\x88\xE2\x96\x88\xE2\x96\x88\xE2\x96\x88\xE2\x96\x88\xE2\x96\x88\xE2\x96\x88\xE2\x96\x88\xE2\x96\x88\x1B[0m\n');
-            },
-            cowsay: (args) => {
-                const text = args.join(' ') || 'Moo!';
-                const len = text.length;
-                const border = '_'.repeat(len + 2);
-                const top = ' ' + border;
-                const mid = '< ' + text + ' >';
-                const bot = ' ' + '_'.repeat(len + 2);
-                const cow = '        \\   ^__^\n         \\  (oo)\\_______\n            (__)\\       )\\/\\\n                ||----w |\n                ||     ||\n';
-                this.print(top + '\n' + mid + '\n' + bot + '\n' + cow);
-            },
-            ascii: () => {
-                this.print('\x1B[1mStandard 16 ANSI Colors:\x1B[0m\n');
-                for (let bg = 0; bg < 16; bg++) {
-                    this.print(`\x1B[48;5;${bg}m  \x1B[0m`);
-                    if (bg % 8 === 7) this.print('\n');
-                }
-                this.print('\n\x1B[1mColor Cube (sample):\x1B[0m\n');
-                for (let g = 0; g < 6; g++) {
-                    for (let r = 0; r < 6; r++) {
-                        const c = 16 + r + g * 36;
-                        this.print(`\x1B[48;5;${c}m  \x1B[0m`);
-                    }
-                    this.print('  ');
-                    for (let b = 0; b < 6; b++) {
-                        const c = 16 + b * 6 + g;
-                        this.print(`\x1B[48;5;${c}m  \x1B[0m`);
-                    }
-                    this.print('\n');
-                }
-            },
-            fortune: () => {
-                const fortunes = [
-                    'A terminal emulator is never late, nor is it early.\nIt renders precisely when it means to.',
-                    '42 is the answer. But what was the question again?',
-                    'The Endless Loop: n.; see Loop, Endless.\nLoop, Endless: n.; see Endless Loop.',
-                    'In a world of GUIs, be a terminal.',
-                    'There is no place like ~',
-                    'Have you tried turning it off and on again?',
-                    '> make me a sandwich\n  What? I don\'t know how to make a sandwich.\n  > sudo make me a sandwich\n  Okay.',
-                    'A journey of a thousand miles begins with\na single step. Or a single keystroke.',
-                ];
-                this.print(fortunes[Math.floor(Math.random() * fortunes.length)] + '\n');
-            },
-            calc: (args) => {
-                try {
-                    const expr = args.join(' ');
-                    const result = Function('"use strict"; return (' + expr + ')')();
-                    this.print(String(result) + '\n');
-                } catch (e) {
-                    this.print('Error: invalid expression\n');
-                }
-            },
-            exit: () => {
-                this.print('Goodbye!\n');
-            },
-            whoami: () => {
-                this.print('user\n');
-            },
-        };
-
-        this.start();
-    }
-
-    start() {
-        this.running = true;
-        this.print('\x1B[2J\x1B[H');
-        this.print('\x1B[1;32mOpenCode Terminal v1.0.0\x1B[0m\n');
-        this.print('Type \x1B[33mhelp\x1B[0m for available commands.\n\n');
-        this.showPrompt();
-    }
-
-    showPrompt() {
-        this.term.write(this.prompt);
-        this.promptShown = true;
-        this.line = '';
-        this.historyPos = -1;
-    }
-
-    handleInput(data) {
-        if (!this.running) return;
-
-        for (let i = 0; i < data.length; i++) {
-            const ch = data[i];
-            const code = ch.charCodeAt ? ch.charCodeAt(0) : ch;
-
-            if (code === 0x03) {
-                this.term.write('^C\n');
-                this.showPrompt();
-                continue;
-            }
-
-            if (code === 0x04) {
-                if (this.line.length === 0) {
-                    this.term.write('exit\n');
-                    this.showPrompt();
-                }
-                continue;
-            }
-
-            if (code === 0x0C) {
-                this.term.write('\x1B[2J\x1B[H');
-                this.term.write(this.prompt + this.line);
-                continue;
-            }
-
-            if (code === 0x0D || code === 0x0A) {
-                this.term.write('\r\n');
-                this.execute(this.line);
-                this.showPrompt();
-                continue;
-            }
-
-            if (code === 0x7F || code === 0x08) {
-                if (this.line.length > 0) {
-                    this.line = this.line.slice(0, -1);
-                    this.term.write('\b \b');
-                }
-                continue;
-            }
-
-            if (code === 0x09) {
-                const completions = Object.keys(this.commands).filter(cmd => cmd.startsWith(this.line));
-                if (completions.length === 1) {
-                    const rest = completions[0].slice(this.line.length);
-                    this.line = completions[0];
-                    this.term.write(rest);
-                } else if (completions.length > 1) {
-                    this.term.write('\r\n');
-                    this.term.write(completions.join('  ') + '\n');
-                    this.term.write(this.prompt + this.line);
-                }
-                continue;
-            }
-
-            if (code === 0x1B) {
-                if (data[i + 1] === '[' || data[i + 1] === 'O') {
-                    const seq = data.slice(i, i + 3);
-                    if (seq === '\x1B[A') {
-                        if (this.history.length > 0) {
-                            if (this.historyPos === -1) this.historyPos = this.history.length - 1;
-                            else if (this.historyPos > 0) this.historyPos--;
-                            const newLine = this.history[this.historyPos];
-                            const diff = this.line.length;
-                            this.term.write('\b \b'.repeat(diff));
-                            this.line = newLine;
-                            this.term.write(newLine);
-                        }
-                        i += 2;
-                        continue;
-                    }
-                    if (seq === '\x1B[B') {
-                        if (this.historyPos >= 0) {
-                            this.historyPos++;
-                            const diff = this.line.length;
-                            this.term.write('\b \b'.repeat(diff));
-                            if (this.historyPos >= this.history.length) {
-                                this.line = '';
-                                this.historyPos = -1;
-                            } else {
-                                this.line = this.history[this.historyPos];
-                                this.term.write(this.line);
-                            }
-                        }
-                        i += 2;
-                        continue;
-                    }
-                    if (seq === '\x1B[C' || seq === '\x1B[D') {
-                        i += 2;
-                        continue;
-                    }
-                }
-                continue;
-            }
-
-            if (code >= 0x20) {
-                this.line += ch;
-                this.term.write(ch);
-            }
-        }
-    }
-
-    execute(line) {
-        const trimmed = line.trim();
-        if (trimmed.length === 0) return;
-        this.history.push(trimmed);
-        if (this.history.length > 100) this.history.shift();
-
-        const parts = trimmed.match(/(?:[^\s"]+|"[^"]*")+/g) || [];
-        const cmd = parts[0] ? parts[0].toLowerCase() : '';
-        const args = parts.slice(1).map(a => a.replace(/^"(.*)"$/, '$1'));
-
-        const handler = this.commands[cmd];
-        if (handler) {
-            handler(args);
-        } else {
-            this.print(`\x1B[91mCommand not found: ${cmd}\x1B[0m\n`);
-            this.print(`Try '\x1B[33mhelp\x1B[0m'.\n`);
-        }
-    }
-
-    print(text) {
-        this.term.write(text);
     }
 }
