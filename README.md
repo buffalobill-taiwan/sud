@@ -12,6 +12,9 @@ Renders entirely via DOM `<span>` elements with CSS color classes — no Canvas.
 - Mouse tracking (normal, button-events, any-event, SGR 1006)
 - Scrollback buffer (2000 lines) with mouse wheel navigation
 - IME support for Chinese/Japanese input via hidden textarea
+- CJK double-width character handling (buffer + rendering + input/delete)
+- `\n` treated as CR+LF for proper newline behavior
+- Viewport auto-scaling (maintains 80×25 aspect ratio, adjustable on resize)
 - Bracketed paste mode
 - Cursor blink animation
 - CRT scanline overlay
@@ -21,11 +24,12 @@ Renders entirely via DOM `<span>` elements with CSS color classes — no Canvas.
 | Component | Approach |
 |-----------|----------|
 | **Rendering** | DOM `<span>` elements grouped by color classes (`q{fgb} b{bg}`, inline styles for >16 colors) |
-| **Buffer** | 2D array of cell objects (`{ch, fg, bg, bold, italic, ...}`) + scrollback array |
+| **Buffer** | 2D array of cell objects (`{ch, fg, bg, bold, italic, ..., width}`) + scrollback array; CJK chars have `width: 2` with a `width: 0` continuation cell |
 | **Input** | `keydown` on `document` (always captured) + hidden `<textarea>` for IME |
 | **Focus** | Automatic refocus on `keyup` (ptt.cc pattern) |
 | **Cursor** | Absolutely-positioned `<div>` with CSS `blink` animation |
 | **Render loop** | `requestAnimationFrame` with dirty-row tracking |
+| **Scaling** | `_setScale()` adjusts font-size, line-height, row heights, and wrapper dimensions; `fitToViewport()` picks max scale on init and debounced resize |
 
 ## Fonts
 
