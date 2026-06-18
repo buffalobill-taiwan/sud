@@ -467,7 +467,7 @@ class Terminal {
                 continue;
             }
             if (code === 0x0D) { this._carriageReturn(); continue; }
-            if (code === 0x0A) { this._lineFeed(); continue; }
+            if (code === 0x0A) { this._carriageReturn(); this._lineFeed(); continue; }
             if (code === 0x08) { this._backspace(); continue; }
             if (code === 0x09) { this._tab(); continue; }
             if (code === 0x07) { continue; }
