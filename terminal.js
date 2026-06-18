@@ -10,8 +10,11 @@ class Terminal {
         this.container = container;
         this.cols = opts.cols || 80;
         this.rows = opts.rows || 25;
-        this.charWidth = opts.charWidth || 8;
-        this.charHeight = opts.charHeight || 16;
+        this._baseCharWidth = opts.charWidth || 8;
+        this._baseCharHeight = opts.charHeight || 16;
+        this.charWidth = this._baseCharWidth;
+        this.charHeight = this._baseCharHeight;
+        this._scale = 1;
         this.scrollbackSize = 2000;
 
         this.onData = null;
@@ -52,6 +55,8 @@ class Terminal {
         this._initDOM();
         this._initBuffer();
         this._bindEvents();
+        this._initResizeListener();
+        this.fitToViewport();
 
         if (!opts.noAutoRender) this._startRenderLoop();
     }
@@ -77,8 +82,6 @@ class Terminal {
     }
 
     _initDOM() {
-        this.container.style.width = (this.cols * this.charWidth) + 'px';
-        this.container.style.height = (this.rows * this.charHeight) + 'px';
         this.container.style.position = 'absolute';
         this.container.style.top = '0';
         this.container.style.left = '0';
@@ -94,6 +97,8 @@ class Terminal {
             this.container.appendChild(row);
             this.rowEls.push(row);
         }
+
+        this._setScale(1);
     }
 
     _initBuffer() {
@@ -925,12 +930,61 @@ class Terminal {
         this._initBuffer();
     }
 
+    _setScale(scale) {
+        this._scale = scale;
+        this.charWidth = this._baseCharWidth * scale;
+        this.charHeight = this._baseCharHeight * scale;
+
+        const w = this.cols * this.charWidth;
+        const h = this.rows * this.charHeight;
+
+        this.container.style.width = w + 'px';
+        this.container.style.height = h + 'px';
+        this.container.style.fontSize = this.charHeight + 'px';
+        this.container.style.lineHeight = this.charHeight + 'px';
+
+        for (const el of this.rowEls) {
+            el.style.height = this.charHeight + 'px';
+            el.style.lineHeight = this.charHeight + 'px';
+        }
+
+        const wrapper = this.container.parentElement;
+        if (wrapper) {
+            wrapper.style.width = w + 'px';
+            wrapper.style.height = h + 'px';
+        }
+
+        this._markAllDirty();
+    }
+
+    fitToViewport() {
+        const pad = 8;
+        const maxW = window.innerWidth - pad * 2;
+        const maxH = window.innerHeight - pad * 2;
+
+        if (maxW <= 0 || maxH <= 0) return;
+
+        const baseW = this.cols * this._baseCharWidth;
+        const baseH = this.rows * this._baseCharHeight;
+
+        let scale = Math.min(maxW / baseW, maxH / baseH);
+        if (scale < 1) scale = 1;
+
+        this._setScale(scale);
+    }
+
+    _initResizeListener() {
+        let timer;
+        window.addEventListener('resize', () => {
+            clearTimeout(timer);
+            timer = setTimeout(() => this.fitToViewport(), 80);
+        });
+    }
+
     resize(cols, rows) {
         this.cols = cols;
         this.rows = rows;
         this.scrollBottom = rows - 1;
-        this.container.style.width = (cols * this.charWidth) + 'px';
-        this.container.style.height = (rows * this.charHeight) + 'px';
         while (this.rowEls.length < rows) {
             const row = document.createElement('div');
             row.className = 'row';
@@ -941,6 +995,7 @@ class Terminal {
             this.container.removeChild(this.rowEls.pop());
         }
         this._initBuffer();
+        this._setScale(this._scale);
         if (this.onResize) this.onResize(cols, rows);
     }
 

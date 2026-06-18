@@ -49,6 +49,7 @@ html, body {
 
 #terminal-wrapper {
     position: relative;
+    box-sizing: content-box;
     background: #000;
     box-shadow: 0 0 40px rgba(0, 255, 0, 0.08),
                 0 0 80px rgba(0, 255, 0, 0.04),
@@ -61,8 +62,6 @@ html, body {
     top: 0;
     left: 0;
     font-family: UnifontTerm, monospace;
-    font-size: 16px;
-    line-height: 16px;
     white-space: pre;
     color: #C0C0C0;
     overflow: hidden;
@@ -71,8 +70,6 @@ html, body {
 
 #screen .row {
     display: block;
-    height: 16px;
-    line-height: 16px;
     white-space: pre;
 }
 
