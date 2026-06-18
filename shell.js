@@ -123,6 +123,20 @@ class DemoShell {
         this.historyPos = -1;
     }
 
+    _isWide(ch) {
+        const code = ch.charCodeAt ? ch.charCodeAt(0) : ch;
+        if (code < 0x1100) return false;
+        if (code <= 0x11FF) return true;
+        if (code >= 0x2E80 && code <= 0x9FFF) return true;
+        if (code >= 0xAC00 && code <= 0xD7AF) return true;
+        if (code >= 0xF900 && code <= 0xFAFF) return true;
+        if (code >= 0xFE10 && code <= 0xFE19) return true;
+        if (code >= 0xFE30 && code <= 0xFE6F) return true;
+        if (code >= 0xFF01 && code <= 0xFF60) return true;
+        if (code >= 0xFFE0 && code <= 0xFFE6) return true;
+        return false;
+    }
+
     handleInput(data) {
         if (!this.running) return;
 
@@ -159,8 +173,10 @@ class DemoShell {
 
             if (code === 0x7F || code === 0x08) {
                 if (this.line.length > 0) {
+                    const last = this.line[this.line.length - 1];
+                    const w = this._isWide(last) ? 2 : 1;
                     this.line = this.line.slice(0, -1);
-                    this.term.write('\b \b');
+                    this.term.write('\b'.repeat(w) + ' '.repeat(w) + '\b'.repeat(w));
                 }
                 continue;
             }

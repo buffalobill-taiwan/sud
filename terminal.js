@@ -65,7 +65,24 @@ class Terminal {
         return { fg: 7, bg: 0, bold: false, dim: false, italic: false, underline: false, blink: false, inverse: false, conceal: false, crossedOut: false };
     }
 
+    _isWide(ch) {
+        const code = ch.charCodeAt ? ch.charCodeAt(0) : ch;
+        if (code < 0x1100) return false;
+        if (code <= 0x11FF) return true;
+        if (code >= 0x2E80 && code <= 0x9FFF) return true;
+        if (code >= 0xAC00 && code <= 0xD7AF) return true;
+        if (code >= 0xF900 && code <= 0xFAFF) return true;
+        if (code >= 0xFE10 && code <= 0xFE19) return true;
+        if (code >= 0xFE30 && code <= 0xFE6F) return true;
+        if (code >= 0xFF01 && code <= 0xFF60) return true;
+        if (code >= 0xFFE0 && code <= 0xFFE6) return true;
+        if (code >= 0x20000 && code <= 0x2FFFF) return true;
+        if (code >= 0x30000 && code <= 0x3FFFF) return true;
+        return false;
+    }
+
     _makeCell(ch) {
+        const w = this._isWide(ch) ? 2 : 1;
         return {
             ch: ch || ' ',
             fg: this.attr.fg,
@@ -78,6 +95,7 @@ class Terminal {
             inverse: this.attr.inverse,
             conceal: this.attr.conceal,
             crossedOut: this.attr.crossedOut,
+            width: w,
         };
     }
 
@@ -177,6 +195,7 @@ class Terminal {
         let i = 0;
         while (i < row.length) {
             const cell = row[i];
+            if (cell.width === 0) { i++; continue; }
             let fg = cell.fg;
             let bg = cell.bg;
             const bold = cell.bold;
@@ -727,7 +746,10 @@ class Terminal {
     }
 
     _backspace() {
-        if (this.curX > 0) this.curX--;
+        if (this.curX <= 0) return;
+        const cell = this.buffer[this.curY]?.[this.curX - 1];
+        const step = (cell && (cell.width === 0 || cell.width === 2)) ? 2 : 1;
+        this.curX = Math.max(0, this.curX - step);
     }
 
     _tab() {
@@ -865,6 +887,11 @@ class Terminal {
     }
 
     _writeChar(ch) {
+        const cell = this._makeCell(ch);
+        if (cell.width === 2 && this.curX >= this.cols - 1) {
+            this.curX = 0;
+            this._lineFeed();
+        }
         if (this.curX >= this.cols) {
             this.curX = 0;
             this._lineFeed();
@@ -873,9 +900,19 @@ class Terminal {
         const row = this.buffer[this.curY];
         if (!row) return;
 
-        row[this.curX] = this._makeCell(ch);
+        row[this.curX] = cell;
+        if (cell.width === 2 && this.curX + 1 < this.cols) {
+            row[this.curX + 1] = {
+                ch: '', fg: this.attr.fg, bg: this.attr.bg,
+                bold: this.attr.bold, dim: this.attr.dim,
+                italic: this.attr.italic, underline: this.attr.underline,
+                blink: this.attr.blink, inverse: this.attr.inverse,
+                conceal: this.attr.conceal, crossedOut: this.attr.crossedOut,
+                width: 0,
+            };
+        }
         this._markRowDirty(this.curY);
-        this.curX++;
+        this.curX += cell.width;
     }
 
     cursorUp(n) { this._cursorUp(n); }
