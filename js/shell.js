@@ -273,7 +273,8 @@ class DemoShell {
         this._clockCleanup = () => {
             running = false;
             clearInterval(id);
-            this.term.write(`\x1B[${lineY + 2};1H\x1B[?25h`);
+            const clampY = Math.min(lineY, Math.max(0, this.term.rows - 2));
+            this.term.write(`\x1B[${clampY + 2};1H\x1B[?25h`);
             this.showPrompt();
         };
     }
@@ -293,6 +294,10 @@ class DemoShell {
                         footer: 'Enter Confirm  ESC Back',
                         stack: this.stateStack,
                         onConfirm: (expr) => {
+                            if (!expr.trim()) {
+                                this.activeDialog = menuDlg;
+                                return;
+                            }
                             let msg;
                             try {
                                 const result = Function('"use strict"; return (' + expr + ')')();

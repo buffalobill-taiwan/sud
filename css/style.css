@@ -664,6 +664,11 @@ html, body {
 .q255{ color: #eeeeee; }
 .b255{ background-color: #eeeeee; }
 
+.qhi { color: #C0C0C0; }
+.bhi { background-color: #000000; }
+.dim { opacity: 0.5; }
+.blink { animation: blink 1s step-end infinite; }
+@keyframes blink { 0%, 50% { opacity: 1; } 51%, 100% { opacity: 0; } }
 .i { font-style: italic; }
 .u { text-decoration: underline; }
 .s { text-decoration: line-through; }

@@ -137,7 +137,14 @@ class Dialog {
     _bufWidth(str) {
         if (!str) return 0;
         let w = 0;
+        let inEsc = false;
         for (const ch of str) {
+            const code = ch.charCodeAt(0);
+            if (code === 0x1B) { inEsc = true; continue; }
+            if (inEsc) {
+                if (code >= 0x40 && code <= 0x7E) inEsc = false;
+                continue;
+            }
             w += this.term._isWide(ch) ? 2 : 1;
         }
         return w;
@@ -158,7 +165,7 @@ class Dialog {
         const titlePad = W - 4 - this._bufWidth(title);
         const titleL = Math.floor(titlePad / 2);
         const titleR = Math.ceil(titlePad / 2);
-        this._t(1, V + ' ' + ' '.repeat(titleL) + '\x1B[1m' + title + '\x1B[22m' + ' '.repeat(titleR) + ' ' + V);
+        this._t(1, V + ' ' + ' '.repeat(Math.max(0, titleL)) + '\x1B[1m' + title + '\x1B[22m' + ' '.repeat(Math.max(0, titleR)) + ' ' + V);
 
         this._t(2, '\u251C' + H.repeat(W - 2) + '\u2524');
 
@@ -168,7 +175,7 @@ class Dialog {
         const footPad = W - 4 - this._bufWidth(foot);
         const footL = Math.floor(footPad / 2);
         const footR = Math.ceil(footPad / 2);
-        this._t(this.h - 2, V + ' ' + ' '.repeat(footL) + foot + ' '.repeat(footR) + ' ' + V);
+        this._t(this.h - 2, V + ' ' + ' '.repeat(Math.max(0, footL)) + foot + ' '.repeat(Math.max(0, footR)) + ' ' + V);
 
         this._t(this.h - 1, '\u2514' + H.repeat(W - 2) + '\u2518');
     }
@@ -474,7 +481,7 @@ class ShowDialog extends Dialog {
         const W = this.width;
         for (let i = 0; i < this._lines.length; i++) {
             const line = this._lines[i];
-            const pad = W - 2 - this._bufWidth(line);
+            const pad = Math.max(0, W - 2 - this._bufWidth(line));
             const l = Math.floor(pad / 2);
             const r = Math.ceil(pad / 2);
             this._t(1 + i, '\u2502' + ' '.repeat(l) + line + ' '.repeat(r) + '\u2502');

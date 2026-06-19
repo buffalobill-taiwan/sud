@@ -301,7 +301,11 @@ class Terminal {
                 else text += ch;
             }
 
-            html += '<span class="' + cls + '">' + text + '</span>';
+            let style = '';
+            if (typeof fg === 'string') style += 'color:' + fg + ';';
+            if (typeof bg === 'string') style += 'background-color:' + bg + ';';
+            const styleAttr = style ? ' style="' + style + '"' : '';
+            html += '<span class="' + cls + '"' + styleAttr + '>' + text + '</span>';
             i = j;
         }
         return html;
@@ -636,7 +640,9 @@ class Terminal {
         if (code === 0x4E || code === 0x4F) { this._state = 'ground'; return; }
         if (code === 0x44) { this._lineFeed(); this._state = 'ground'; return; }
         if (code === 0x45) { this._lineFeed(); this._carriageReturn(); this._state = 'ground'; return; }
-        if (code === 0x48) { this._setTabStop(); this._state = 'ground'; return; }
+        if (code === 0x37) { this.savedX = this.curX; this.savedY = this.curY; this._state = 'ground'; return; }
+        if (code === 0x38) { if (this.savedX >= 0) { this.curX = this.savedX; this.curY = this.savedY; this._markRowDirty(this.curY); } this._state = 'ground'; return; }
+        if (code === 0x48) { this._state = 'ground'; return; }
         if (code === 0x4D) { this._reverseIndex(); this._state = 'ground'; return; }
         if (code === 0x5C) { this._state = 'ground'; return; }
         if (code >= 0x40 && code <= 0x5F) { this._state = 'ground'; return; }
@@ -755,9 +761,15 @@ class Terminal {
     }
 
     _setMode(params) {
+        for (const p of params) {
+            if (p === 4) this.modes.insertMode = true;
+        }
     }
 
     _resetMode(params) {
+        for (const p of params) {
+            if (p === 4) this.modes.insertMode = false;
+        }
     }
 
     _setSGR(params) {
@@ -870,9 +882,11 @@ class Terminal {
     }
 
     _lineFeed() {
+        if (this.curY < this.scrollTop) this.curY = this.scrollTop;
         this._markRowDirty(this.curY);
-        if (this.curY === this.scrollBottom) {
+        if (this.curY >= this.scrollBottom) {
             this._scrollUp(1);
+            this.curY = this.scrollBottom;
         } else {
             this.curY++;
         }
@@ -941,7 +955,13 @@ class Terminal {
                 this._markRowDirty(r);
             }
             this._eraseLine(1);
-        } else if (mode === 2 || mode === 3) {
+        } else if (mode === 2) {
+            for (let r = 0; r < this.rows; r++) {
+                this.buffer[r] = this._emptyRow();
+                this._markRowDirty(r);
+            }
+        } else if (mode === 3) {
+            this.scrollback = [];
             for (let r = 0; r < this.rows; r++) {
                 this.buffer[r] = this._emptyRow();
                 this._markRowDirty(r);
@@ -963,20 +983,22 @@ class Terminal {
     }
 
     _insertLines(n) {
-        n = Math.min(n, this.rows - this.curY);
+        const top = Math.max(this.curY, this.scrollTop);
+        n = Math.min(n, this.scrollBottom - top + 1);
         for (let i = 0; i < n; i++) {
-            for (let r = this.scrollBottom; r > this.curY; r--) {
+            for (let r = this.scrollBottom; r > top; r--) {
                 this.buffer[r] = this.buffer[r - 1];
             }
-            this.buffer[this.curY] = this._emptyRow();
+            this.buffer[top] = this._emptyRow();
         }
         this._markAllDirty();
     }
 
     _deleteLines(n) {
-        n = Math.min(n, this.rows - this.curY);
+        const top = Math.max(this.curY, this.scrollTop);
+        n = Math.min(n, this.scrollBottom - top + 1);
         for (let i = 0; i < n; i++) {
-            for (let r = this.curY; r < this.scrollBottom; r++) {
+            for (let r = top; r < this.scrollBottom; r++) {
                 this.buffer[r] = this.buffer[r + 1];
             }
             this.buffer[this.scrollBottom] = this._emptyRow();
@@ -1153,6 +1175,8 @@ class Terminal {
     }
 
     resize(cols, rows) {
+        const oldCols = this.cols;
+        const oldRows = this.rows;
         this.cols = cols;
         this.rows = rows;
         this.scrollBottom = rows - 1;
@@ -1165,7 +1189,24 @@ class Terminal {
         while (this.rowEls.length > rows) {
             this.container.removeChild(this.rowEls.pop());
         }
-        this._initBuffer();
+        while (this.buffer.length < rows) {
+            this.buffer.push(this._emptyRow());
+        }
+        while (this.buffer.length > rows) {
+            this.buffer.pop();
+        }
+        for (let r = 0; r < rows; r++) {
+            const row = this.buffer[r];
+            if (!row) continue;
+            if (cols > oldCols) {
+                for (let c = oldCols; c < cols; c++) row.push(this._makeCell(' '));
+            } else if (cols < oldCols) {
+                row.length = cols;
+            }
+        }
+        this.curX = Math.min(this.curX, cols - 1);
+        this.curY = Math.min(this.curY, rows - 1);
+        this._markAllDirty();
         this._setScale(this._scale);
         if (this.onResize) this.onResize(cols, rows);
     }
@@ -1215,8 +1256,7 @@ class Terminal {
             const row = Math.floor(y / this.charHeight);
             if (col < 0 || col >= this.cols || row < 0 || row >= this.rows) return;
             if (this.mouseMode === 9) return;
-            const btn = this.mouseBtn + 32;
-            this._sendMouseEvent('m', btn, col + 1, row + 1);
+            this._sendMouseEvent('m', this.mouseBtn, col + 1, row + 1);
         }
         this.mouseBtn = 0;
     }
@@ -1229,14 +1269,15 @@ class Terminal {
         const col = Math.floor(x / this.charWidth);
         const row = Math.floor(y / this.charHeight);
         if (col < 0 || col >= this.cols || row < 0 || row >= this.rows) return;
-        this._sendMouseEvent('M', this.mouseBtn + 32, col + 1, row + 1);
+        this._sendMouseEvent('M', this.mouseBtn, col + 1, row + 1);
     }
 
     _sendMouseEvent(prefix, btn, col, row) {
         if (this.mouseMode === 1006) {
-            this._send('\x1B[' + prefix + btn + ';' + col + ';' + row);
+            this._send(`\x1B[<${btn};${col};${row}${prefix}`);
         } else {
-            this._send('\x1B[' + prefix + String.fromCharCode(btn + 32) + String.fromCharCode(col + 32) + String.fromCharCode(row + 32));
+            const ev = (prefix === 'm') ? btn + 64 : btn + 32;
+            this._send('\x1B[' + prefix + String.fromCharCode(ev) + String.fromCharCode(col + 32) + String.fromCharCode(row + 32));
         }
     }
 }
