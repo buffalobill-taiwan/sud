@@ -54,18 +54,21 @@ Open `index.html` in a modern browser, or visit the live demo:
 
 | Command | Description |
 |---------|-------------|
+| `ascii` | Show ANSI color chart (16 color + 256 color cube) |
+| `calc` | Evaluate arithmetic expression |
+| `clear` | Clear screen |
+| `clock` | Live clock (ESC to exit); opens dialog from menu |
+| `cowsay` | Let a cow speak |
+| `date` | Show current date/time |
+| `echo` | Print arguments |
+| `exit` | Exit the demo shell |
+| `fortune` | Display a random fortune |
 | `help` | List available commands |
 | `menu` | Open command menu dialog |
-| `clear` | Clear screen |
-| `echo` | Print arguments |
-| `date` | Show current date/time |
-| `fortune` | Display a random fortune |
-| `ascii` | Show ANSI color chart (16 color + 256 color cube) |
 | `neofetch` | Display system info |
-| `cowsay` | Let a cow speak |
-| `calc` | Evaluate arithmetic expression |
+| `uname` | Print system information |
 | `whoami` | Show user name |
-| `exit` | Exit the demo shell |
+| `widget` | Toggle TSR clock widget (top-right corner) |
 
 **Ctrl+Shift++ / Ctrl+-** — Scroll back/forward through history.
 
