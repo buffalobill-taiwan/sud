@@ -1,7 +1,9 @@
-class Help extends CmdBase {
+import { CmdBase } from './CmdBase.js';
+
+export class Help extends CmdBase {
     execute(args) {
         this.print('\x1B[1;33mAvailable commands:\x1B[0m\n');
-        for (const { name, help } of this.shell._cmdList) {
+        for (const { name, help } of this.shell.cmdList) {
             this.print('  ' + name.padEnd(11) + help + '\n');
         }
     }

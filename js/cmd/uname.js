@@ -1,4 +1,6 @@
-class Uname extends CmdBase {
+import { CmdBase } from './CmdBase.js';
+
+export class Uname extends CmdBase {
     execute(args) {
         this.print('OpenCode Terminal v1.0.0\n');
     }

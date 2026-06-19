@@ -1,4 +1,6 @@
-class Exit extends CmdBase {
+import { CmdBase } from './CmdBase.js';
+
+export class Exit extends CmdBase {
     execute(args) {
         this.print('Goodbye!\n');
     }

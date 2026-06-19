@@ -1,4 +1,6 @@
-class Calc extends CmdBase {
+import { CmdBase } from './CmdBase.js';
+
+export class Calc extends CmdBase {
     execute(args) {
         try {
             const expr = args.join(' ');

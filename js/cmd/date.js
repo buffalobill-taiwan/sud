@@ -1,4 +1,6 @@
-class DateCmd extends CmdBase {
+import { CmdBase } from './CmdBase.js';
+
+export class DateCmd extends CmdBase {
     execute(args) {
         this.print(new Date().toString() + '\n');
     }

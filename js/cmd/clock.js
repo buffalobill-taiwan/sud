@@ -1,6 +1,8 @@
-class ClockCmd extends CmdBase {
+import { CmdBase } from './CmdBase.js';
+
+export class ClockCmd extends CmdBase {
     execute(args) {
-        this.shell._clockMode();
+        this.shell.clockMode();
     }
     static get commandName() { return 'clock'; }
     static get help() { return 'Show live clock (ESC to exit)'; }

@@ -1,4 +1,7 @@
-class ClockWidget extends WidgetBase {
+import { WidgetBase } from '../WidgetBase.js';
+import { formatTime } from '../../time.js';
+
+export class ClockWidget extends WidgetBase {
     constructor(shell) {
         super(shell);
         this._intervalId = null;
@@ -23,10 +26,7 @@ class ClockWidget extends WidgetBase {
     }
 
     draw() {
-        const now = new Date();
-        const time = String(now.getHours()).padStart(2, '0') + ':' +
-                     String(now.getMinutes()).padStart(2, '0') + ':' +
-                     String(now.getSeconds()).padStart(2, '0');
+        const time = formatTime(new Date());
         const x = this.term.cols - 8;
         this.term.write(`\x1B[s\x1B[${this._row + 1};${x + 1}H\x1B[44;37m${time}\x1B[0m\x1B[u`);
     }

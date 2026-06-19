@@ -1,33 +1,47 @@
+/**
+ * Dialog framework for nested modal dialogs.
+ *
+ * StateStack manages save/restore of buffer area + cursor across dialog layers.
+ * Dialog base class handles frame drawing and key dispatch.
+ *
+ * Subclasses: MenuDialog, InputDialog, ClockDialog, ShowDialog.
+ *
+ * All dialogs write directly into the Terminal buffer (no DOM overlay),
+ * using CSI escape sequences for positioning.
+ */
+
+import { formatTime } from './time.js';
+
 // ── Utility functions ──
 
-function saveArea(term, y, h) {
+export function saveArea(term, y, h) {
     const saved = [];
     for (let r = 0; r < h && y + r < term.rows; r++) {
-        const row = term.buffer[y + r];
+        const row = term.getRow(y + r);
         saved.push(row ? row.map(c => ({ ...c })) : null);
     }
     return saved;
 }
 
-function restoreArea(term, saved, y) {
+export function restoreArea(term, saved, y) {
     for (let r = 0; r < saved.length && y + r < term.rows; r++) {
-        if (saved[r]) term.buffer[y + r] = saved[r];
+        if (saved[r]) term.setRow(y + r, saved[r]);
     }
-    term._markAllDirty();
+    term.markAllDirty();
 }
 
-function saveCursor(term) {
+export function saveCursor(term) {
     return { x: term.curX, y: term.curY };
 }
 
-function restoreCursor(term, cur) {
+export function restoreCursor(term, cur) {
     term.curX = cur.x;
     term.curY = cur.y;
 }
 
 // ── StateStack — nested dialog state management ──
 
-class StateStack {
+export class StateStack {
     constructor(term) {
         this.term = term;
         this._stack = [];
@@ -56,16 +70,16 @@ class StateStack {
             h,
             saved: saveArea(this.term, y, h),
             cursor: saveCursor(this.term),
-            cursorHidden: this.term._cursorHidden,
+            cursorHidden: this.term.cursorHidden,
         });
-        this.term._cursorHidden = true;
+        this.term.cursorHidden = true;
         this.term.write('\x1B[?25l');
     }
 
     pop() {
         const state = this._stack.pop();
         if (!state) return;
-        this.term._cursorHidden = state.cursorHidden;
+        this.term.cursorHidden = state.cursorHidden;
         this.term.write(state.cursorHidden ? '\x1B[?25l' : '\x1B[?25h');
         restoreCursor(this.term, state.cursor);
         restoreArea(this.term, state.saved, state.y);
@@ -79,7 +93,7 @@ class StateStack {
 
 // ── Dialog base class ──
 
-class Dialog {
+export class Dialog {
     constructor(term, opts) {
         this.term = term;
         this.stack = opts.stack || null;
@@ -145,7 +159,7 @@ class Dialog {
                 if (code >= 0x40 && code <= 0x7E) inEsc = false;
                 continue;
             }
-            w += this.term._isWide(ch) ? 2 : 1;
+            w += this.term.isWide(ch) ? 2 : 1;
         }
         return w;
     }
@@ -161,13 +175,13 @@ class Dialog {
 
         this._t(0, '\u250C' + H.repeat(W - 2) + '\u2510');
 
-        const title = this.title;
-        const titlePad = W - 4 - this._bufWidth(title);
-        const titleL = Math.floor(titlePad / 2);
-        const titleR = Math.ceil(titlePad / 2);
-        this._t(1, V + ' ' + ' '.repeat(Math.max(0, titleL)) + '\x1B[1m' + title + '\x1B[22m' + ' '.repeat(Math.max(0, titleR)) + ' ' + V);
-
-        this._t(2, '\u251C' + H.repeat(W - 2) + '\u2524');
+        if (this.title) {
+            const titlePad = W - 4 - this._bufWidth(this.title);
+            const titleL = Math.floor(titlePad / 2);
+            const titleR = Math.ceil(titlePad / 2);
+            this._t(1, V + ' ' + ' '.repeat(Math.max(0, titleL)) + '\x1B[1m' + this.title + '\x1B[22m' + ' '.repeat(Math.max(0, titleR)) + ' ' + V);
+            this._t(2, '\u251C' + H.repeat(W - 2) + '\u2524');
+        }
 
         this._t(this.h - 3, '\u251C' + H.repeat(W - 2) + '\u2524');
 
@@ -191,7 +205,7 @@ class Dialog {
 
 // ── MenuDialog ──
 
-class MenuDialog extends Dialog {
+export class MenuDialog extends Dialog {
     constructor(term, items, opts) {
         const width = opts.width || 44;
         const visibleCount = opts.visibleCount || 5;
@@ -320,7 +334,7 @@ class MenuDialog extends Dialog {
 
 // ── InputDialog ──
 
-class InputDialog extends Dialog {
+export class InputDialog extends Dialog {
     constructor(term, opts) {
         const width = opts.width || 40;
         const h = 8;
@@ -392,9 +406,9 @@ class InputDialog extends Dialog {
     }
 }
 
-class ClockDialog extends Dialog {
+export class ClockDialog extends Dialog {
     constructor(term, opts) {
-        super(term, Object.assign({ width: 22, footer: 'ESC/Enter to exit' }, opts));
+        super(term, Object.assign({ width: 22, footer: 'ESC/Enter to exit', title: null }, opts));
         this.h = 6;
         this.x = Math.floor((term.cols - this.width) / 2);
         this.y = Math.floor((term.rows - this.h) / 2);
@@ -403,33 +417,17 @@ class ClockDialog extends Dialog {
     }
 
     open() {
-        Dialog.prototype.open.call(this);
+        super.open();
         this._intervalId = setInterval(() => this._renderContent(), 1000);
     }
 
     close() {
         if (this._intervalId) { clearInterval(this._intervalId); this._intervalId = null; }
-        Dialog.prototype.close.call(this);
-    }
-
-    _drawFrame() {
-        const W = this.width;
-        this._t(0, '\u250C' + '\u2500'.repeat(W - 2) + '\u2510');
-        this._t(1, '\u2502' + ' '.repeat(W - 2) + '\u2502');
-        this._t(this.h - 3, '\u251C' + '\u2500'.repeat(W - 2) + '\u2524');
-        const foot = this.footer;
-        const fp = W - 4 - this._bufWidth(foot);
-        const fl = Math.floor(fp / 2);
-        const fr = Math.ceil(fp / 2);
-        this._t(this.h - 2, '\u2502 ' + ' '.repeat(fl) + foot + ' '.repeat(fr) + ' \u2502');
-        this._t(this.h - 1, '\u2514' + '\u2500'.repeat(W - 2) + '\u2518');
+        super.close();
     }
 
     _renderContent() {
-        const now = new Date();
-        const t = String(now.getHours()).padStart(2, '0') + ':' +
-                 String(now.getMinutes()).padStart(2, '0') + ':' +
-                 String(now.getSeconds()).padStart(2, '0');
+        const t = formatTime(new Date());
         const W = this.width;
         const timePad = Math.floor((W - 2 - 8) / 2);
         this._t(1, '\u2502' + ' '.repeat(timePad) + '\x1B[36m' + t + '\x1B[0m' +
@@ -453,9 +451,9 @@ class ClockDialog extends Dialog {
     }
 }
 
-class ShowDialog extends Dialog {
+export class ShowDialog extends Dialog {
     constructor(term, opts) {
-        super(term, Object.assign({ width: 40, footer: 'ESC to back' }, opts));
+        super(term, Object.assign({ width: 40, footer: 'ESC to back', title: null }, opts));
         this.message = opts.message || '';
         this._lines = this.message.split('\n');
         const h = Math.max(4, this._lines.length + 4);
@@ -463,18 +461,6 @@ class ShowDialog extends Dialog {
         this.x = Math.floor((term.cols - this.width) / 2);
         this.y = Math.floor((term.rows - this.h) / 2);
         this._onExit = opts.onExit || null;
-    }
-
-    _drawFrame() {
-        const W = this.width;
-        this._t(0, '\u250C' + '\u2500'.repeat(W - 2) + '\u2510');
-        this._t(this.h - 3, '\u251C' + '\u2500'.repeat(W - 2) + '\u2524');
-        const foot = this.footer;
-        const fp = W - 4 - this._bufWidth(foot);
-        const fl = Math.floor(fp / 2);
-        const fr = Math.ceil(fp / 2);
-        this._t(this.h - 2, '\u2502 ' + ' '.repeat(fl) + foot + ' '.repeat(fr) + ' \u2502');
-        this._t(this.h - 1, '\u2514' + '\u2500'.repeat(W - 2) + '\u2518');
     }
 
     _renderContent() {

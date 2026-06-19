@@ -1,4 +1,6 @@
-class Cowsay extends CmdBase {
+import { CmdBase } from './CmdBase.js';
+
+export class Cowsay extends CmdBase {
     execute(args) {
         const text = args.join(' ') || 'Moo!';
         const len = text.length;

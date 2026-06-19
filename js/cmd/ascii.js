@@ -1,4 +1,6 @@
-class Ascii extends CmdBase {
+import { CmdBase } from './CmdBase.js';
+
+export class Ascii extends CmdBase {
     execute(args) {
         this.print('\x1B[1mStandard 16 ANSI Colors:\x1B[0m\n');
         for (let bg = 0; bg < 16; bg++) {

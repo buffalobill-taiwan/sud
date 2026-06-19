@@ -1,4 +1,6 @@
-class Fortune extends CmdBase {
+import { CmdBase } from './CmdBase.js';
+
+export class Fortune extends CmdBase {
     execute(args) {
         const fortunes = [
             'A terminal emulator is never late, nor is it early.\nIt renders precisely when it means to.',

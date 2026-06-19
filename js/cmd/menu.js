@@ -1,6 +1,8 @@
-class MenuCmd extends CmdBase {
+import { CmdBase } from './CmdBase.js';
+
+export class MenuCmd extends CmdBase {
     execute(args) {
-        this.shell._menuCmd();
+        this.shell.menuCmd();
     }
     static get commandName() { return 'menu'; }
     static get help() { return 'Open command menu'; }

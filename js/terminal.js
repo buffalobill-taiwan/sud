@@ -1,4 +1,27 @@
-const XTERM_COLORS = [
+/**
+ * 80×25 ANSI terminal emulator. DOM-rendered, Unifont monospace.
+ * Parses SGR, CSI, OSC, DCS escape sequences; supports 256/truecolor,
+ * mouse tracking (X10, VT200, SGR 1006), scrollback, and alt buffer.
+ *
+ * State machine for escape parsing:
+ *
+ *   ground ──\x1B──► escape ──[──► csi ──@..~──► ground
+ *                    escape ──]──► osc ──\x07/ST──► ground
+ *                    escape ──P──► dcs ──\x07/ST──► ground
+ *                    escape ──X──► sos (passthrough)
+ *                    escape ──^──► pm  (passthrough)
+ *                    escape ──_──► apc (passthrough)
+ *                    escape ──7/8──► DECSC/DECRC (ground)
+ *                    escape ──D/E/H/M──► ground (single-char)
+ *
+ * Public API: write(), focus(), resize(), clearBuffer(),
+ * scrollbackUp/Down(), lineFeed(), getRow/setRow(),
+ * cursorHidden getter/setter, markAllDirty(), isWide().
+ *
+ * Callbacks: onData(data), onResize(cols, rows).
+ */
+
+export const XTERM_COLORS = [
     '#000000', '#CD0000', '#00CD00', '#CDCD00',
     '#0000EE', '#CD00CD', '#00CDCD', '#E5E5E5',
     '#7F7F7F', '#FF0000', '#00FF00', '#FFFF00',
@@ -45,7 +68,7 @@ const XTERM_COLORS = [
     '#bcbcbc', '#c6c6c6', '#d0d0d0', '#dadada', '#e4e4e4', '#eeeeee',
 ];
 
-class Terminal {
+export class Terminal {
     constructor(container, opts = {}) {
         this.container = container;
         this.cols = opts.cols || 80;
@@ -101,6 +124,26 @@ class Terminal {
 
         if (!opts.noAutoRender) this._startRenderLoop();
     }
+
+    /**
+     * @param {number} r — row index
+     * @returns {Array|null} — shallow copy of the buffer row
+     */
+    getRow(r) { return this.buffer[r]; }
+    /**
+     * @param {number} r — row index
+     * @param {Array} row — cell array to assign
+     */
+    setRow(r, row) { this.buffer[r] = row; }
+    get cursorHidden() { return this._cursorHidden; }
+    set cursorHidden(v) { this._cursorHidden = v; }
+    /** Mark all rows dirty so the next render frame redraws everything. */
+    markAllDirty() { this._markAllDirty(); }
+    /**
+     * @param {string|number} ch — character or codepoint
+     * @returns {boolean} — true if the glyph occupies 2 columns
+     */
+    isWide(ch) { return this._isWide(ch); }
 
     _defaultAttr() {
         return { fg: 7, bg: 0, bold: false, dim: false, italic: false, underline: false, blink: false, inverse: false, conceal: false, crossedOut: false };
@@ -570,10 +613,17 @@ class Terminal {
         return Math.min(this.scrollback.length, this.scrollbackSize);
     }
 
+    /**
+     * Focus the hidden textarea (routes keyboard input).
+     */
     focus() {
         this._focusInput();
     }
 
+    /**
+     * Write string or byte array to terminal. Parses ANSI escape sequences.
+     * @param {string|number[]} data
+     */
     write(data) {
         if (!data) return;
         for (let i = 0; i < data.length; i++) {
@@ -1109,16 +1159,23 @@ class Terminal {
         this._markAllDirty();
     }
 
+    /**
+     * Scroll back `n` lines (show older history).
+     */
     scrollbackUp(n) {
-        this.viewOffset = Math.min(this._maxViewOffset(), this.viewOffset + n);
+        this.viewOffset = Math.min(this.viewOffset + n, this._maxViewOffset());
         this._markAllDirty();
     }
 
+    /**
+     * Scroll forward `n` lines (back to current output).
+     */
     scrollbackDown(n) {
         this.viewOffset = Math.max(0, this.viewOffset - n);
         this._markAllDirty();
     }
 
+    /** Clear buffer and scrollback. */
     clearBuffer() {
         this._initBuffer();
     }
@@ -1174,6 +1231,12 @@ class Terminal {
         });
     }
 
+    /**
+     * Resize viewport to new dimensions. Preserves buffer content,
+     * trims/extends rows and columns as needed.
+     * @param {number} cols
+     * @param {number} rows
+     */
     resize(cols, rows) {
         const oldCols = this.cols;
         const oldRows = this.rows;

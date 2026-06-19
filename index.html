@@ -13,43 +13,6 @@
     <div id="scanlines"></div>
     <div id="overscan"></div>
 </div>
-<script src="js/terminal.js"></script>
-<script src="js/dialog.js"></script>
-<script src="js/cmd/CmdBase.js"></script>
-<script src="js/cmd/help.js"></script>
-<script src="js/cmd/clear.js"></script>
-<script src="js/cmd/echo.js"></script>
-<script src="js/cmd/date.js"></script>
-<script src="js/cmd/uname.js"></script>
-<script src="js/cmd/neofetch.js"></script>
-<script src="js/cmd/cowsay.js"></script>
-<script src="js/cmd/ascii.js"></script>
-<script src="js/cmd/fortune.js"></script>
-<script src="js/cmd/calc.js"></script>
-<script src="js/cmd/exit.js"></script>
-<script src="js/cmd/whoami.js"></script>
-<script src="js/cmd/menu.js"></script>
-<script src="js/cmd/WidgetBase.js"></script>
-<script src="js/cmd/widgets/ClockWidget.js"></script>
-<script src="js/cmd/widget.js"></script>
-<script src="js/cmd/clock.js"></script>
-<script src="js/shell.js"></script>
-<script>
-(function() {
-    const term = new Terminal(document.getElementById('screen'), {
-        cols: 80,
-        rows: 25,
-        charWidth: 8,
-        charHeight: 16,
-    });
-
-    const shell = new DemoShell(term);
-    term.onData = (data) => shell.handleInput(data);
-    term.focus();
-
-    window.term = term;
-    window.shell = shell;
-})();
-</script>
+<script type="module" src="js/main.js"></script>
 </body>
 </html>

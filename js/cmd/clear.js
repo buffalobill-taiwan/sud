@@ -1,4 +1,6 @@
-class Clear extends CmdBase {
+import { CmdBase } from './CmdBase.js';
+
+export class Clear extends CmdBase {
     execute(args) {
         this.term.write('\x1B[2J\x1B[H');
     }

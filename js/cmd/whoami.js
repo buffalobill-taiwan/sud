@@ -1,4 +1,6 @@
-class Whoami extends CmdBase {
+import { CmdBase } from './CmdBase.js';
+
+export class Whoami extends CmdBase {
     execute(args) {
         this.print('user\n');
     }

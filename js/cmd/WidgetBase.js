@@ -1,4 +1,4 @@
-class WidgetBase {
+export class WidgetBase {
     constructor(shell) {
         this.shell = shell;
         this.term = shell.term;

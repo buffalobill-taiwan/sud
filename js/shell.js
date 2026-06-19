@@ -1,4 +1,18 @@
-class DemoShell {
+/**
+ * DemoShell — line-editing shell with history, tab completion,
+ * command dispatch, dialog integration, and clock mode.
+ *
+ * ShellWidgetManager — manages TSR widget lifecycle with scroll region.
+ */
+
+import { StateStack, MenuDialog, InputDialog, ClockDialog, ShowDialog } from './dialog.js';
+import { formatTime } from './time.js';
+import {
+    Help, Clear, Echo, DateCmd, Uname, Neofetch, Cowsay, Ascii,
+    Fortune, Calc, Exit, Whoami, MenuCmd, ClockCmd, WidgetCmd,
+} from './cmd/index.js';
+
+export class DemoShell {
     constructor(term) {
         this.term = term;
         this.line = '';
@@ -13,7 +27,7 @@ class DemoShell {
         this._pendingAction = null;
         this.commands = {};
         this.menuItems = [];
-        this._cmdList = [];
+        this.cmdList = [];
 
         this._clockCleanup = null;
         this.widgetManager = new ShellWidgetManager(this);
@@ -32,10 +46,10 @@ class DemoShell {
             const help = Cls.help;
             const menu = Cls.menu;
             this.commands[name] = cmd.execute.bind(cmd);
-            this._cmdList.push({ name, help });
+            this.cmdList.push({ name, help });
             if (menu) this.menuItems.push({ name, desc: menu });
         }
-        this._cmdList.sort((a, b) => a.name.localeCompare(b.name));
+        this.cmdList.sort((a, b) => a.name.localeCompare(b.name));
         this.menuItems.sort((a, b) => a.name.localeCompare(b.name));
     }
 
@@ -56,39 +70,12 @@ class DemoShell {
         this.historyPos = -1;
     }
 
-    _isWide(ch) {
-        const code = ch.charCodeAt ? ch.charCodeAt(0) : ch;
-
-        if (code >= 0x1100) {
-            if (code <= 0x11FF) return true;
-            if (code >= 0x2E80 && code <= 0x9FFF) return true;
-            if (code >= 0xAC00 && code <= 0xD7AF) return true;
-            if (code >= 0xF900 && code <= 0xFAFF) return true;
-            if (code >= 0xFE10 && code <= 0xFE19) return true;
-            if (code >= 0xFE30 && code <= 0xFE6F) return true;
-            if (code >= 0xFF01 && code <= 0xFF60) return true;
-            if (code >= 0xFFE0 && code <= 0xFFE6) return true;
-            if (code >= 0x20000 && code <= 0x2FFFF) return true;
-            if (code >= 0x30000 && code <= 0x3FFFF) return true;
-        }
-
-        if (code < 0x100) return false;
-
-        if (code === 0x23F0 || code === 0x23F3) return true;
-
-        if (code >= 0x2190 && code <= 0x21FF) return false;
-        if (code >= 0x2300 && code <= 0x23FF) return false;
-        if (code >= 0x2500 && code <= 0x25FF) return false;
-
-        if (!this._canv) {
-            this._canv = document.createElement('canvas');
-            this._ctx = this._canv.getContext('2d');
-            this._ctx.font = '16px UnifontTerm, monospace';
-        }
-        const w = this._ctx.measureText(ch).width;
-        return w > 10;
-    }
-
+    /**
+     * Main input pipeline. Processing order:
+     * 1. clock mode → only ESC exits
+     * 2. active dialog → handleKey, then consume _pendingAction
+     * 3. shell line editing → Ctrl/C, D, L, Enter, BS, Tab, arrow history
+     */
     handleInput(data) {
         if (!this.running) return;
 
@@ -165,7 +152,7 @@ class DemoShell {
             if (code === 0x7F || code === 0x08) {
                 if (this.line.length > 0) {
                     const last = this.line[this.line.length - 1];
-                    const w = this._isWide(last) ? 2 : 1;
+                    const w = this.term.isWide(last) ? 2 : 1;
                     this.line = this.line.slice(0, -1);
                     this.term.write('\b'.repeat(w) + ' '.repeat(w) + '\b'.repeat(w));
                 }
@@ -256,16 +243,13 @@ class DemoShell {
         this.term.write(text);
     }
 
-    _clockMode() {
+    clockMode() {
         const lineY = this.term.curY;
         let running = true;
         this.term.write('\x1B[?25l');
         const draw = () => {
             if (!running) return;
-            const now = new Date();
-            const t = String(now.getHours()).padStart(2, '0') + ':' +
-                     String(now.getMinutes()).padStart(2, '0') + ':' +
-                     String(now.getSeconds()).padStart(2, '0');
+            const t = formatTime(new Date());
             this.term.write(`\x1B[${lineY + 1};1H\x1B[2K\x1B[36m${t}\x1B[0m`);
         };
         draw();
@@ -279,7 +263,46 @@ class DemoShell {
         };
     }
 
-    _menuCmd() {
+    _openCalcDialog(menuDlg) {
+        const inputDlg = new InputDialog(this.term, {
+            title: '\u8ACB\u8F38\u5165\u7B97\u5F0F',
+            prompt: '\u7B97\u5F0F\uFF1A',
+            footer: 'Enter Confirm  ESC Back',
+            stack: this.stateStack,
+            onConfirm: (expr) => {
+                if (!expr.trim()) {
+                    this.activeDialog = menuDlg;
+                    return;
+                }
+                let msg;
+                try {
+                    const result = Function('"use strict"; return (' + expr + ')')();
+                    msg = String(result);
+                } catch (e) {
+                    msg = '\x1B[91mError:\x1B[0m ' + e.message;
+                }
+                this._pendingAction = { type: 'show-calc-result', message: msg };
+            },
+            onCancel: () => {
+                this.activeDialog = menuDlg;
+            }
+        });
+        this.activeDialog = inputDlg;
+        inputDlg.open();
+    }
+
+    _openClockDialog() {
+        const clockDlg = new ClockDialog(this.term, {
+            stack: this.stateStack,
+            onExit: () => {
+                this.activeDialog = this.menuDialog;
+            }
+        });
+        this.activeDialog = clockDlg;
+        clockDlg.open();
+    }
+
+    menuCmd() {
         const menuDlg = new MenuDialog(this.term, this.menuItems, {
             width: 44,
             title: 'Command Menu',
@@ -288,42 +311,11 @@ class DemoShell {
             stack: this.stateStack,
             onSelect: (item) => {
                 if (item.name === 'calc') {
-                    const inputDlg = new InputDialog(this.term, {
-                        title: '\u8ACB\u8F38\u5165\u7B97\u5F0F',
-                        prompt: '\u7B97\u5F0F\uFF1A',
-                        footer: 'Enter Confirm  ESC Back',
-                        stack: this.stateStack,
-                        onConfirm: (expr) => {
-                            if (!expr.trim()) {
-                                this.activeDialog = menuDlg;
-                                return;
-                            }
-                            let msg;
-                            try {
-                                const result = Function('"use strict"; return (' + expr + ')')();
-                                msg = String(result);
-                            } catch (e) {
-                                msg = '\x1B[91mError:\x1B[0m ' + e.message;
-                            }
-                            this._pendingAction = { type: 'show-calc-result', message: msg };
-                        },
-                        onCancel: () => {
-                            this.activeDialog = menuDlg;
-                        }
-                    });
-                    this.activeDialog = inputDlg;
-                    inputDlg.open();
+                    this._openCalcDialog(menuDlg);
                     return;
                 }
                 if (item.name === 'clock') {
-                    const clockDlg = new ClockDialog(this.term, {
-                        stack: this.stateStack,
-                        onExit: () => {
-                            this.activeDialog = this.menuDialog;
-                        }
-                    });
-                    this.activeDialog = clockDlg;
-                    clockDlg.open();
+                    this._openClockDialog();
                     return;
                 }
                 this._pendingAction = { type: 'exec', cmd: item.name, args: [] };
@@ -339,7 +331,7 @@ class DemoShell {
     }
 }
 
-class ShellWidgetManager {
+export class ShellWidgetManager {
     constructor(shell) {
         this.shell = shell;
         this.term = shell.term;
@@ -381,7 +373,7 @@ class ShellWidgetManager {
     _setScrollTop(n) {
         this.term.scrollTop = n;
         this.term.scrollBottom = this.term.rows - 1;
-        this.term._markAllDirty();
+        this.term.markAllDirty();
     }
 
     destroy() {

@@ -1,4 +1,13 @@
-class CmdBase {
+/**
+ * Abstract base for all shell commands.
+ *
+ * Subclasses must implement execute(args) and define static getters:
+ * - commandName → registration key
+ * - help → description shown in `help` output
+ * - menu → menu description (or null to hide from menu)
+ */
+
+export class CmdBase {
     constructor(shell) {
         this.shell = shell;
         this.term = shell.term;

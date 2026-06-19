@@ -1,4 +1,6 @@
-class Echo extends CmdBase {
+import { CmdBase } from './CmdBase.js';
+
+export class Echo extends CmdBase {
     execute(args) {
         this.print(args.join(' ') + '\n');
     }

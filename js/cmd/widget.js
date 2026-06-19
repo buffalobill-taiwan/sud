@@ -1,4 +1,7 @@
-class WidgetCmd extends CmdBase {
+import { CmdBase } from './CmdBase.js';
+import { ClockWidget } from './widgets/ClockWidget.js';
+
+export class WidgetCmd extends CmdBase {
     execute(args) {
         if (this._clock) {
             this.shell.widgetManager.remove(this._clock);

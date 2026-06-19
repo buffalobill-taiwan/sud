@@ -1,4 +1,6 @@
-class Neofetch extends CmdBase {
+import { CmdBase } from './CmdBase.js';
+
+export class Neofetch extends CmdBase {
     execute(args) {
         this.print('\x1B[1;36m  OpenCodeTerm\x1B[0m\n');
         this.print('\x1B[1;34m  -----------\x1B[0m\n');
