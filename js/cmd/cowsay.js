@@ -5,9 +5,9 @@ export class Cowsay extends CmdBase {
         const text = args.join(' ') || 'Moo!';
         const len = text.length;
         const border = '\x1B[33m' + '='.repeat(len + 2) + '\x1B[0m';
-        const top = '  ' + border;
+        const top = ' ' + border;
         const mid = '\x1B[33m< \x1B[1;37m' + text + '\x1B[0m \x1B[33m>\x1B[0m';
-        const bot = '  ' + border;
+        const bot = ' ' + border;
         const cow = '\x1B[32m        \\   \x1B[1;37m^__^\x1B[0m\x1B[32m\n' +
                    '         \\  (\x1B[1;37moo\x1B[0m\x1B[32m)\\_______\n' +
                    '            (__)\\       )\\/\\\n' +
