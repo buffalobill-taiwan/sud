@@ -384,3 +384,109 @@ class InputDialog extends Dialog {
         }
     }
 }
+
+class ClockDialog extends Dialog {
+    constructor(term, opts) {
+        super(term, Object.assign({ width: 22, footer: 'ESC/Enter to exit' }, opts));
+        this.h = 6;
+        this.x = Math.floor((term.cols - this.width) / 2);
+        this.y = Math.floor((term.rows - this.h) / 2);
+        this._intervalId = null;
+        this._onExit = opts.onExit || null;
+    }
+
+    open() {
+        Dialog.prototype.open.call(this);
+        this._intervalId = setInterval(() => this._renderContent(), 1000);
+    }
+
+    close() {
+        if (this._intervalId) { clearInterval(this._intervalId); this._intervalId = null; }
+        Dialog.prototype.close.call(this);
+    }
+
+    _drawFrame() {
+        const W = this.width;
+        this._t(0, '\u250C' + '\u2500'.repeat(W - 2) + '\u2510');
+        this._t(1, '\u2502' + ' '.repeat(W - 2) + '\u2502');
+        this._t(this.h - 3, '\u251C' + '\u2500'.repeat(W - 2) + '\u2524');
+        const foot = this.footer;
+        const fp = W - 4 - this._bufWidth(foot);
+        const fl = Math.floor(fp / 2);
+        const fr = Math.ceil(fp / 2);
+        this._t(this.h - 2, '\u2502 ' + ' '.repeat(fl) + foot + ' '.repeat(fr) + ' \u2502');
+        this._t(this.h - 1, '\u2514' + '\u2500'.repeat(W - 2) + '\u2518');
+    }
+
+    _renderContent() {
+        const now = new Date();
+        const t = String(now.getHours()).padStart(2, '0') + ':' +
+                 String(now.getMinutes()).padStart(2, '0') + ':' +
+                 String(now.getSeconds()).padStart(2, '0');
+        const W = this.width;
+        const timePad = Math.floor((W - 2 - 8) / 2);
+        this._t(1, '\u2502' + ' '.repeat(timePad) + '\x1B[36m' + t + '\x1B[0m' +
+               ' '.repeat(W - 2 - 8 - timePad) + '\u2502');
+        const itemStr = '  EXIT  ';
+        const itemLen = 8;
+        const itemPad = (W - 2 - itemLen);
+        const itemL = Math.floor(itemPad / 2);
+        const itemR = Math.ceil(itemPad / 2);
+        this._t(2, '\u2502' + ' '.repeat(itemL) + '\x1B[7m' + itemStr + '\x1B[0m' +
+               ' '.repeat(itemR) + '\u2502');
+    }
+
+    _onKey(data) {
+        if (data.length !== 1) return;
+        const code = data.charCodeAt(0);
+        if (code === 0x1B || code === 0x03 || code === 0x0D || code === 0x0A) {
+            if (this._onExit) this._onExit();
+            return 'close';
+        }
+    }
+}
+
+class ShowDialog extends Dialog {
+    constructor(term, opts) {
+        super(term, Object.assign({ width: 40, footer: 'ESC to back' }, opts));
+        this.message = opts.message || '';
+        this._lines = this.message.split('\n');
+        const h = Math.max(4, this._lines.length + 4);
+        this.h = h;
+        this.x = Math.floor((term.cols - this.width) / 2);
+        this.y = Math.floor((term.rows - this.h) / 2);
+        this._onExit = opts.onExit || null;
+    }
+
+    _drawFrame() {
+        const W = this.width;
+        this._t(0, '\u250C' + '\u2500'.repeat(W - 2) + '\u2510');
+        this._t(this.h - 3, '\u251C' + '\u2500'.repeat(W - 2) + '\u2524');
+        const foot = this.footer;
+        const fp = W - 4 - this._bufWidth(foot);
+        const fl = Math.floor(fp / 2);
+        const fr = Math.ceil(fp / 2);
+        this._t(this.h - 2, '\u2502 ' + ' '.repeat(fl) + foot + ' '.repeat(fr) + ' \u2502');
+        this._t(this.h - 1, '\u2514' + '\u2500'.repeat(W - 2) + '\u2518');
+    }
+
+    _renderContent() {
+        const W = this.width;
+        for (let i = 0; i < this._lines.length; i++) {
+            const line = this._lines[i];
+            const pad = W - 2 - this._bufWidth(line);
+            const l = Math.floor(pad / 2);
+            const r = Math.ceil(pad / 2);
+            this._t(1 + i, '\u2502' + ' '.repeat(l) + line + ' '.repeat(r) + '\u2502');
+        }
+    }
+
+    _onKey(data) {
+        if (data.length !== 1) return;
+        const code = data.charCodeAt(0);
+        if (code === 0x1B || code === 0x03 || code === 0x0D || code === 0x0A) {
+            if (this._onExit) this._onExit();
+            return 'close';
+        }
+    }
+}

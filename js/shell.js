@@ -15,6 +15,7 @@ class DemoShell {
         this.menuItems = [];
         this._cmdList = [];
 
+        this._clockCleanup = null;
         this.widgetManager = new ShellWidgetManager(this);
         this._registerCommands();
         this.start();
@@ -22,8 +23,8 @@ class DemoShell {
 
     _registerCommands() {
         const classes = [
-            Help, Clear, Echo, DateCmd, Uname, Neofetch,
-            Cowsay, Ascii, Fortune, Calc, Exit, Whoami, MenuCmd, WidgetCmd,
+            Ascii, Calc, Clear, ClockCmd, Cowsay, DateCmd, Echo,
+            Exit, Fortune, Help, MenuCmd, Neofetch, Uname, Whoami, WidgetCmd,
         ];
         for (const Cls of classes) {
             const cmd = new Cls(this);
@@ -34,6 +35,8 @@ class DemoShell {
             this._cmdList.push({ name, help });
             if (menu) this.menuItems.push({ name, desc: menu });
         }
+        this._cmdList.sort((a, b) => a.name.localeCompare(b.name));
+        this.menuItems.sort((a, b) => a.name.localeCompare(b.name));
     }
 
     start() {
@@ -89,6 +92,19 @@ class DemoShell {
     handleInput(data) {
         if (!this.running) return;
 
+        if (this._clockCleanup) {
+            for (let i = 0; i < data.length; i++) {
+                const code = data.charCodeAt ? data.charCodeAt(i) : data[i];
+                if (code === 0x1B) {
+                    const fn = this._clockCleanup;
+                    this._clockCleanup = null;
+                    fn();
+                    return;
+                }
+            }
+            return;
+        }
+
         if (this.activeDialog && !this.activeDialog.closed) {
             this.activeDialog.handleKey(data);
             if (this.activeDialog && this.activeDialog.closed) {
@@ -97,11 +113,15 @@ class DemoShell {
             if (this._pendingAction) {
                 const a = this._pendingAction;
                 this._pendingAction = null;
-                if (a.type === 'close-chain') {
-                    if (this.menuDialog && !this.menuDialog.closed) this.menuDialog.close();
-                    this.menuDialog = null;
-                    this.activeDialog = null;
-                    this.commands[a.cmd](a.args);
+                if (a.type === 'show-calc-result') {
+                    const showDlg = new ShowDialog(this.term, {
+                        message: a.message,
+                        stack: this.stateStack,
+                        onExit: () => { this.activeDialog = this.menuDialog; },
+                    });
+                    this.activeDialog = showDlg;
+                    showDlg.open();
+                    return;
                 } else if (a.type === 'exec') {
                     this.menuDialog = null;
                     this.commands[a.cmd](a.args);
@@ -138,7 +158,7 @@ class DemoShell {
             if (code === 0x0D || code === 0x0A) {
                 this.term.write('\r\n');
                 this.execute(this.line);
-                if (!this.activeDialog) this.showPrompt();
+            if (!this.activeDialog && !this._clockCleanup) this.showPrompt();
                 continue;
             }
 
@@ -236,6 +256,28 @@ class DemoShell {
         this.term.write(text);
     }
 
+    _clockMode() {
+        const lineY = this.term.curY;
+        let running = true;
+        this.term.write('\x1B[?25l');
+        const draw = () => {
+            if (!running) return;
+            const now = new Date();
+            const t = String(now.getHours()).padStart(2, '0') + ':' +
+                     String(now.getMinutes()).padStart(2, '0') + ':' +
+                     String(now.getSeconds()).padStart(2, '0');
+            this.term.write(`\x1B[${lineY + 1};1H\x1B[2K\x1B[36m${t}\x1B[0m`);
+        };
+        draw();
+        const id = setInterval(draw, 1000);
+        this._clockCleanup = () => {
+            running = false;
+            clearInterval(id);
+            this.term.write(`\x1B[${lineY + 2};1H\x1B[?25h`);
+            this.showPrompt();
+        };
+    }
+
     _menuCmd() {
         const menuDlg = new MenuDialog(this.term, this.menuItems, {
             width: 44,
@@ -251,7 +293,14 @@ class DemoShell {
                         footer: 'Enter Confirm  ESC Back',
                         stack: this.stateStack,
                         onConfirm: (expr) => {
-                            this._pendingAction = { type: 'close-chain', cmd: 'calc', args: [expr] };
+                            let msg;
+                            try {
+                                const result = Function('"use strict"; return (' + expr + ')')();
+                                msg = String(result);
+                            } catch (e) {
+                                msg = '\x1B[91mError:\x1B[0m ' + e.message;
+                            }
+                            this._pendingAction = { type: 'show-calc-result', message: msg };
                         },
                         onCancel: () => {
                             this.activeDialog = menuDlg;
@@ -259,6 +308,17 @@ class DemoShell {
                     });
                     this.activeDialog = inputDlg;
                     inputDlg.open();
+                    return;
+                }
+                if (item.name === 'clock') {
+                    const clockDlg = new ClockDialog(this.term, {
+                        stack: this.stateStack,
+                        onExit: () => {
+                            this.activeDialog = this.menuDialog;
+                        }
+                    });
+                    this.activeDialog = clockDlg;
+                    clockDlg.open();
                     return;
                 }
                 this._pendingAction = { type: 'exec', cmd: item.name, args: [] };

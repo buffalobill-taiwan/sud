@@ -79,3 +79,43 @@ Only `menu` command is special (invokes `shell._menuCmd()` dialog flow). `calc` 
 - core font (eascii-core): all glyphs have advance=32 units = 8px at 16px font-size
 - ext font (eascii-ext): glyphs like ⏎, ✓, ✖ have advance=64 units = 16px at 16px font-size
 - U+2191 (↑), U+2193 (↓) are in core at 8px — only ⏎ was problematic
+
+### Dialog Frame & Item Positioning
+
+Dialogs write box-drawing chars directly into the terminal buffer via `_t(row, s)` which wraps `\x1B[Y;XH` CSI:
+
+```js
+_t(row, s) {  // row = 0-indexed offset from dialog.y
+    this.term.write(`\x1B[${this.y + 1 + row};${this.x + 1}H${s}`);
+}
+```
+
+**Frame width formula (for width W):**
+
+| Element | Content | Width |
+|---|---|---|
+| Top/bottom border | `┌` + `─`×(W-2) + `┐` | W |
+| Separator | `├` + `─`×(W-2) + `┤` | W |
+| Content row | `│` + content(W-2) + `│` | W |
+
+**Centering content within borders:**
+
+```
+contentWidth = W - 2                 // space between │ and │
+padTotal = contentWidth - contentLen // remaining space
+leftPad = Math.floor(padTotal / 2)
+rightPad = Math.ceil(padTotal / 2)
+line = '│' + ' '.repeat(leftPad) + content + ' '.repeat(rightPad) + '│'
+```
+
+**Highlight bar (inverted item):**
+
+Escape sequences (`\x1B[7m`/`\x1B[0m`) take zero cell width. Only visible chars count:
+
+```js
+itemStr = '  EXIT  ';           // visible: 8 chars
+itemLen = itemStr.length;       // 8 (or _bufWidth() for CJK)
+line = '│' + padLeft + '\x1B[7m' + itemStr + '\x1B[0m' + padRight + '│';
+```
+
+**CJK safety:** All string padding calculations use `_bufWidth(str)` instead of `str.length` when content may contain fullwidth chars, since CJK characters occupy 2 cells each. (`_bufWidth` sums `_isWide(ch) ? 2 : 1` per char.)
