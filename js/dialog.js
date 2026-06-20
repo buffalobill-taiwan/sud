@@ -190,6 +190,7 @@ export class Dialog {
     close() {
         if (this.closed) return;
         this.closed = true;
+        this._markDirty();
         if (this.stack) {
             this.stack.pop();
         } else {
