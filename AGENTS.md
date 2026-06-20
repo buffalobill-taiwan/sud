@@ -12,7 +12,7 @@ Each visual layer owns its own cell buffer. Renderer blends them at render time:
 ```
 Renderer._blendOverlays(Y):
   1. base = main buffer row Y (or scrollback)
-  2. for each overlay (sorted by z):
+  2. for each overlay (registration order, later wins):
        if Y in [ov.y, ov.y+ov.h):
          for c in [ov.x, ov.x+ov.w):
            cell = ov.getCell(relY, relC)
@@ -71,11 +71,11 @@ Dialog.open():
   _initBuffer()
   _overlay = { y, x, w, h, z:100, getCell }
   term.addOverlay(_overlay)
-  stack.push(y, h)        // cursor state save
+  if (stack) stack.push(y, h)  // cursor state save (optional)
   _drawFrame() + refreshContent()
 
 Dialog.close():
-  stack.pop()             // cursor state restore, hooks fire
+  if (stack) stack.pop()       // cursor state restore, hooks fire
   term.removeOverlay(_overlay)
 ```
 
@@ -90,6 +90,9 @@ Dialog.close():
 ## Changes Made This Session
 
 ### Done
+- **Clock command refactored**: `clock` at shell prompt uses `ClockWidget` overlay instead of `shell.clockMode()` (CSI-based). Widget left-aligned (x=0), no background (bg=0). ClockWidget constructor accepts `opts.bg`. Ctrl+C also triggers `_clockCleanup`.
+- **Menu clock uses ClockWidget**: `ClockDialog` frame renders at z=100; `ClockWidget` registered second (overlay array order → widget processes after dialog → time text wins over spaces). Dialog opens first, widget starts second. Clock centered within dialog (content width 20 − widget width 8 = offset 6), bg=0.
+- **`isCovered` removed entirely**: `StateStack.isCovered()` method deleted. `ShellWidgetManager.redrawAll()` and `ClockWidget` interval no longer check `isCovered` — render order in `_blendOverlays` is the only mechanism for visual layering.
 - **Overlay compositing architecture**: Widgets and dialogs now own their own cell buffers. Renderer blends them over the main buffer at render time via `_blendOverlays()` in `Renderer.js`. No more `saveArea`/`restoreArea` or scroll region protection.
 - **Screen/Parser/Renderer split** (`js/terminal.js` → `Screen.js` + `Parser.js` + `Renderer.js`): Terminal data model, escape parser, and DOM renderer separated into independent files. Terminal stays as thin coordinator (~100 lines).
 - **LineEditor extraction** (`js/LineEditor.js`): Shell line editing (history, tab completion, key dispatch) extracted from `shell.js` into its own class.
@@ -101,6 +104,10 @@ Dialog.close():
 - `saveArea()`, `restoreArea()`, `saveCursor()`, `restoreCursor()` — no longer needed
 - `WidgetBase._saveBacking()`, `_restoreBacking()`
 - `ShellWidgetManager._setScrollTop()`
+- `shell.clockMode()` — replaced by ClockWidget-based ClockCmd.execute()
+- `StateStack.isCovered()` — render order is the only visual layering mechanism
+- `formatTime` import from `shell.js` and `dialog.js` — no longer used
+- `isCovered` check from `ShellWidgetManager.redrawAll()` and `ClockWidget` interval
 
 ## Command Architecture
 
@@ -263,13 +270,13 @@ putc(x, y, ch, fg, bg, attrs) {
 }
 ```
 
-ClockWidget uses `putc()` to fill 8 cells with time chars (fg=7, bg=4):
+ClockWidget uses `putc()` to fill 8 cells with time chars (fg=7, bg from `opts.bg`, default 4):
 
 ```js
 draw() {
     const time = formatTime(new Date());
     for (let i = 0; i < this._w; i++)
-        this.putc(i, 0, time[i] || ' ', 7, 4);
+        this.putc(i, 0, time[i] || ' ', 7, this._bg);
 }
 ```
 

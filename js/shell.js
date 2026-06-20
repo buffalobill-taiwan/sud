@@ -8,11 +8,10 @@
 import { StateStack, MenuDialog, InputDialog, ClockDialog, ShowDialog } from './dialog.js';
 import { Typewriter } from './typewriter.js';
 import { LineEditor } from './LineEditor.js';
-import { formatTime } from './time.js';
 import {
     Help, Clear, Echo, DateCmd, Uname, Neofetch, Cowsay, Ascii,
     Fortune, Calc, Exit, Whoami, MenuCmd, ClockCmd, WidgetCmd, Quiz,
-    DvdCmd,
+    DvdCmd, ClockWidget,
 } from './cmd/index.js';
 
 export class DemoShell {
@@ -99,7 +98,7 @@ export class DemoShell {
         if (this._clockCleanup) {
             for (let i = 0; i < data.length; i++) {
                 const code = data.charCodeAt ? data.charCodeAt(i) : data[i];
-                if (code === 0x1B) {
+                if (code === 0x1B || code === 0x03) {
                     const fn = this._clockCleanup;
                     this._clockCleanup = null;
                     fn();
@@ -226,26 +225,6 @@ export class DemoShell {
         }
     }
 
-    clockMode() {
-        const lineY = this.term.curY;
-        let running = true;
-        this.term.write('\x1B[?25l');
-        const draw = () => {
-            if (!running) return;
-            const t = formatTime(new Date());
-            this.term.write(`\x1B[${lineY + 1};1H\x1B[2K\x1B[36m${t}\x1B[0m`);
-        };
-        draw();
-        const id = setInterval(draw, 1000);
-        this._clockCleanup = () => {
-            running = false;
-            clearInterval(id);
-            const clampY = Math.min(lineY, Math.max(0, this.term.rows - 2));
-            this.term.write(`\x1B[${clampY + 2};1H\x1B[?25h`);
-            this.showPrompt();
-        };
-    }
-
     _openCalcDialog(menuDlg) {
         const inputDlg = new InputDialog(this.term, {
             title: '\u8ACB\u8F38\u5165\u7B97\u5F0F',
@@ -311,13 +290,20 @@ export class DemoShell {
 
     _openClockDialog() {
         const clockDlg = new ClockDialog(this.term, {
-            stack: this.stateStack,
             onExit: () => {
+                if (this._clockWidget) {
+                    this._clockWidget.stop();
+                    this._clockWidget = null;
+                }
                 this.activeDialog = this.menuDialog;
             }
         });
+        this._clockWidget = new ClockWidget(this, { bg: 0 });
+        this._clockWidget._y = clockDlg.y + 1;
+        this._clockWidget._x = clockDlg.x + 1 + Math.floor((clockDlg.width - 2 - 8) / 2);
         this.activeDialog = clockDlg;
         clockDlg.open();
+        this._clockWidget.start();
     }
 
     menuCmd() {
@@ -384,9 +370,7 @@ export class ShellWidgetManager {
 
     redrawAll() {
         for (const w of this._widgets) {
-            if (!this.shell.stateStack.isCovered(w._y)) {
-                w.draw();
-            }
+            w.draw();
         }
     }
 

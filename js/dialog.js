@@ -8,8 +8,6 @@
  * on the terminal for compositing at render time.
  */
 
-import { formatTime } from './time.js';
-
 // ── SGR parsing helpers ──
 
 const _defaultAttr = () => ({ fg: 7, bg: 0, bold: false, dim: false, italic: false, underline: false, blink: false, inverse: false, conceal: false, crossedOut: false });
@@ -108,13 +106,6 @@ export class StateStack {
     removeRestoreHook(fn) {
         const i = this._restoreHooks.indexOf(fn);
         if (i >= 0) this._restoreHooks.splice(i, 1);
-    }
-
-    isCovered(row) {
-        for (const s of this._stack) {
-            if (row >= s.y && row < s.y + s.h) return true;
-        }
-        return false;
     }
 
     push(y, h) {
@@ -496,26 +487,11 @@ export class ClockDialog extends Dialog {
         this.h = 6;
         this.x = Math.floor((term.cols - this.width) / 2);
         this.y = Math.floor((term.rows - this.h) / 2);
-        this._intervalId = null;
         this._onExit = opts.onExit || null;
     }
 
-    open() {
-        super.open();
-        this._intervalId = setInterval(() => {
-            this._renderContent();
-            this._markDirty();
-        }, 1000);
-    }
-
-    close() {
-        if (this._intervalId) { clearInterval(this._intervalId); this._intervalId = null; }
-        super.close();
-    }
-
     _renderContent() {
-        const t = formatTime(new Date());
-        this._centerRow(1, '\x1B[36m' + t + '\x1B[0m');
+        _writeStr(this._buffer, 1, 0, '\u2502' + ' '.repeat(this.width - 2) + '\u2502', this.width);
         this._centerRow(2, '\x1B[7m  EXIT  \x1B[0m');
     }
 

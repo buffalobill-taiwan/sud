@@ -29,8 +29,8 @@ Renders entirely via DOM `<span>` elements with CSS color classes — no Canvas.
 |-----------|----------|
 | **Rendering** | DOM `<span>` elements grouped by CSS color classes (`q{0-255} b{0-255}`, truecolor via `qhi`/`bhi` + inline style) |
 | **Buffer** | 2D array of cell objects (`{ch, fg, bg, bold, italic, ..., width}`) + scrollback array; CJK chars have `width: 2` with a `width: 0` continuation cell |
-| **Dialog** | Reusable dialog framework (`Dialog`, `MenuDialog`, `InputDialog`) in `dialog.js` with `StateStack` for nested state management |
-| **StateStack** | Each dialog push saves buffer area, cursor position, and cursor visibility; pop restores all three — handles arbitrary nesting |
+| **Dialog** | Reusable dialog framework (`Dialog`, `MenuDialog`, `InputDialog`, `ClockDialog`) in `dialog.js` with overlay lifecycle |
+| **StateStack** | Each dialog push saves cursor position + visibility; pop restores both — no buffer save/restore, overlays handle compositing |
 | **Input** | `keydown` on `document` (always captured) + hidden `<textarea>` for IME |
 | **Focus** | Automatic refocus on `keyup` (ptt.cc pattern) |
 | **Cursor** | Absolutely-positioned `<div>` with CSS `blink` animation |
@@ -59,7 +59,7 @@ Open `index.html` in a modern browser, or visit the live demo:
 | `ascii` | Show ANSI color chart (16 color + 256 color cube) |
 | `calc` | Evaluate arithmetic expression |
 | `clear` | Clear screen |
-| `clock` | Live clock (ESC to exit); opens dialog from menu |
+| `clock` | Live clock; ESC / Ctrl+C to exit; shell uses inline widget, menu uses dialog frame |
 | `cowsay` | Let a cow speak |
 | `date` | Show current date/time |
 | `echo` | Print arguments |

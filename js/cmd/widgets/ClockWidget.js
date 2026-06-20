@@ -2,22 +2,19 @@ import { WidgetBase } from '../WidgetBase.js';
 import { formatTime } from '../../time.js';
 
 export class ClockWidget extends WidgetBase {
-    constructor(shell) {
+    constructor(shell, opts = {}) {
         super(shell);
         this._x = shell.term.cols - 8;
         this._w = 8;
         this._h = 1;
+        this._bg = opts.bg != null ? opts.bg : 4;
         this._intervalId = null;
     }
 
     start() {
         super.start();
         this.draw();
-        this._intervalId = setInterval(() => {
-            if (!this.shell.stateStack.isCovered(this._y)) {
-                this.draw();
-            }
-        }, 1000);
+        this._intervalId = setInterval(() => this.draw(), 1000);
     }
 
     stop() {
@@ -31,7 +28,7 @@ export class ClockWidget extends WidgetBase {
     draw() {
         const time = formatTime(new Date());
         for (let i = 0; i < this._w; i++) {
-            this.putc(i, 0, time[i] || ' ', 7, 4);
+            this.putc(i, 0, time[i] || ' ', 7, this._bg);
         }
     }
 }
