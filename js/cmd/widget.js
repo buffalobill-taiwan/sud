@@ -14,5 +14,5 @@ export class WidgetCmd extends CmdBase {
 
     static get commandName() { return 'widget'; }
     static get help() { return 'Toggle TSR clock widget'; }
-    static get menu() { return 'TSR clock (\u23F0 top-right)'; }
+    static get menu() { return 'TSR clock (top-right)'; }
 }
