@@ -7,6 +7,7 @@
 
 import { StateStack, MenuDialog, InputDialog, ClockDialog, ShowDialog } from './dialog.js';
 import { Typewriter } from './typewriter.js';
+import { LineEditor } from './LineEditor.js';
 import { formatTime } from './time.js';
 import {
     Help, Clear, Echo, DateCmd, Uname, Neofetch, Cowsay, Ascii,
@@ -16,12 +17,9 @@ import {
 export class DemoShell {
     constructor(term) {
         this.term = term;
-        this.line = '';
         this.prompt = '$ ';
         this.promptShown = false;
         this.running = false;
-        this.history = [];
-        this.historyPos = -1;
         this.stateStack = new StateStack(this.term);
         this.activeDialog = null;
         this.menuDialog = null;
@@ -39,8 +37,20 @@ export class DemoShell {
                 this.showPrompt();
             }
         });
+        this.editor = new LineEditor(this.term, {
+            onExecute: (line) => {
+                this.execute(line);
+                if (!this.activeDialog && !this._clockCleanup && !this._readLinePending) this._checkTypewriterDrain();
+            },
+            onShowPrompt: () => this._checkTypewriterDrain(),
+        });
+        this.editor.setPrompt(this.prompt);
+
         this.widgetManager = new ShellWidgetManager(this);
         this._registerCommands();
+
+        this.editor.setCommands(Object.keys(this.commands));
+
         this.start();
     }
 
@@ -75,8 +85,7 @@ export class DemoShell {
     showPrompt() {
         this.term.write(this.prompt);
         this.promptShown = true;
-        this.line = '';
-        this.historyPos = -1;
+        this.editor.reset();
     }
 
     readLine(callback) {
@@ -84,12 +93,6 @@ export class DemoShell {
         this._readLineBuffer = '';
     }
 
-    /**
-     * Main input pipeline. Processing order:
-     * 1. clock mode → only ESC exits
-     * 2. active dialog → handleKey, then consume _pendingAction
-     * 3. shell line editing → Ctrl/C, D, L, Enter, BS, Tab, arrow history
-     */
     handleInput(data) {
         if (!this.running) return;
 
@@ -189,114 +192,14 @@ export class DemoShell {
             return;
         }
 
-        for (let i = 0; i < data.length; i++) {
-            const ch = data[i];
-            const code = ch.charCodeAt ? ch.charCodeAt(0) : ch;
-
-            if (code === 0x03) {
-                this.term.write('^C\n');
-                this.showPrompt();
-                continue;
-            }
-
-            if (code === 0x04) {
-                if (this.line.length === 0) {
-                    this.term.write('exit\n');
-                    this.showPrompt();
-                }
-                continue;
-            }
-
-            if (code === 0x0C) {
-                this.term.write('\x1B[2J\x1B[H');
-                this.term.write(this.prompt + this.line);
-                continue;
-            }
-
-            if (code === 0x0D || code === 0x0A) {
-                this.term.write('\r\n');
-                this.execute(this.line);
-                this.line = '';
-                if (!this.activeDialog && !this._clockCleanup && !this._readLinePending) this._checkTypewriterDrain();
-                continue;
-            }
-
-            if (code === 0x7F || code === 0x08) {
-                if (this.line.length > 0) {
-                    const last = this.line[this.line.length - 1];
-                    const w = this.term.isWide(last) ? 2 : 1;
-                    this.line = this.line.slice(0, -1);
-                    this.term.write('\b'.repeat(w) + ' '.repeat(w) + '\b'.repeat(w));
-                }
-                continue;
-            }
-
-            if (code === 0x09) {
-                const completions = Object.keys(this.commands).filter(cmd => cmd.startsWith(this.line));
-                if (completions.length === 1) {
-                    const rest = completions[0].slice(this.line.length);
-                    this.line = completions[0];
-                    this.term.write(rest);
-                } else if (completions.length > 1) {
-                    this.term.write('\r\n');
-                    this.term.write(completions.join('  ') + '\n');
-                    this.term.write(this.prompt + this.line);
-                }
-                continue;
-            }
-
-            if (code === 0x1B) {
-                if (data[i + 1] === '[' || data[i + 1] === 'O') {
-                    const seq = data.slice(i, i + 3);
-                    if (seq === '\x1B[A') {
-                        if (this.history.length > 0) {
-                            if (this.historyPos === -1) this.historyPos = this.history.length - 1;
-                            else if (this.historyPos > 0) this.historyPos--;
-                            const newLine = this.history[this.historyPos];
-                            const diff = this.line.length;
-                            this.term.write('\b \b'.repeat(diff));
-                            this.line = newLine;
-                            this.term.write(newLine);
-                        }
-                        i += 2;
-                        continue;
-                    }
-                    if (seq === '\x1B[B') {
-                        if (this.historyPos >= 0) {
-                            this.historyPos++;
-                            const diff = this.line.length;
-                            this.term.write('\b \b'.repeat(diff));
-                            if (this.historyPos >= this.history.length) {
-                                this.line = '';
-                                this.historyPos = -1;
-                            } else {
-                                this.line = this.history[this.historyPos];
-                                this.term.write(this.line);
-                            }
-                        }
-                        i += 2;
-                        continue;
-                    }
-                    if (seq === '\x1B[C' || seq === '\x1B[D') {
-                        i += 2;
-                        continue;
-                    }
-                }
-                continue;
-            }
-
-            if (code >= 0x20) {
-                this.line += ch;
-                this.term.write(ch);
-            }
-        }
+        this.editor.handleKey(data);
     }
 
     execute(line) {
         const trimmed = line.trim();
         if (trimmed.length === 0) return;
-        this.history.push(trimmed);
-        if (this.history.length > 100) this.history.shift();
+        this.editor.history.push(trimmed);
+        if (this.editor.history.length > 100) this.editor.history.shift();
 
         const parts = trimmed.match(/(?:[^\s"]+|"[^"]*")+/g) || [];
         const cmd = parts[0] ? parts[0].toLowerCase() : '';
@@ -461,9 +364,7 @@ export class ShellWidgetManager {
 
     add(widget) {
         const n = this._widgets.length;
-        widget._row = n;
-        const total = n + 1;
-        this._setScrollTop(total);
+        widget._y = n;
         widget.start();
         this._widgets.push(widget);
     }
@@ -474,31 +375,24 @@ export class ShellWidgetManager {
         widget.stop();
         this._widgets.splice(i, 1);
         for (let j = 0; j < this._widgets.length; j++) {
-            this._widgets[j]._row = j;
+            const w = this._widgets[j];
+            w._y = j;
+            if (w._overlay) w._overlay.y = j;
         }
-        const total = this._widgets.length;
-        this._setScrollTop(total);
         this.redrawAll();
     }
 
     redrawAll() {
         for (const w of this._widgets) {
-            if (!this.shell.stateStack.isCovered(w._row)) {
+            if (!this.shell.stateStack.isCovered(w._y)) {
                 w.draw();
             }
         }
-    }
-
-    _setScrollTop(n) {
-        this.term.scrollTop = n;
-        this.term.scrollBottom = this.term.rows - 1;
-        this.term.markAllDirty();
     }
 
     destroy() {
         this.shell.stateStack.removeRestoreHook(this._hook);
         for (const w of this._widgets) w.stop();
         this._widgets = [];
-        this._setScrollTop(0);
     }
 }

@@ -4,6 +4,9 @@ import { formatTime } from '../../time.js';
 export class ClockWidget extends WidgetBase {
     constructor(shell) {
         super(shell);
+        this._x = shell.term.cols - 8;
+        this._w = 8;
+        this._h = 1;
         this._intervalId = null;
     }
 
@@ -11,7 +14,7 @@ export class ClockWidget extends WidgetBase {
         super.start();
         this.draw();
         this._intervalId = setInterval(() => {
-            if (!this.shell.stateStack.isCovered(this._row)) {
+            if (!this.shell.stateStack.isCovered(this._y)) {
                 this.draw();
             }
         }, 1000);
@@ -26,9 +29,9 @@ export class ClockWidget extends WidgetBase {
     }
 
     draw() {
-        this._restoreBacking();
         const time = formatTime(new Date());
-        const x = this.term.cols - 8;
-        this.term.write(`\x1B[s\x1B[${this._row + 1};${x + 1}H\x1B[44;37m${time}\x1B[0m\x1B[u`);
+        for (let i = 0; i < this._w; i++) {
+            this.putc(i, 0, time[i] || ' ', 7, 4);
+        }
     }
 }

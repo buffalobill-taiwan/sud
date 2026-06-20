@@ -23,6 +23,8 @@ Renders entirely via DOM `<span>` elements with CSS color classes — no Canvas.
 
 ## Architecture
 
+> **Note on 256-color CSS classes:** The 480 `.q16`–`.q255`/`.b16`–`.b255` CSS rules in `style.css` could theoretically be replaced by inline styles (since `_rowToHTML` already uses inline `style` for truecolor), but this is intentionally not pursued. Keeping class-based rendering avoids generating 80×25 inline style strings per frame, improves browser style invalidation, and keeps the render hot path simple. If CSS rule count ever becomes a concern, rules can be generated dynamically via `CSSStyleSheet.insertRule()` instead of a static file.
+
 | Component | Approach |
 |-----------|----------|
 | **Rendering** | DOM `<span>` elements grouped by CSS color classes (`q{0-255} b{0-255}`, truecolor via `qhi`/`bhi` + inline style) |
