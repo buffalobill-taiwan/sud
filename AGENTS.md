@@ -3,31 +3,110 @@
 ## Goal
 Pure HTML+CSS+JS 80×25 terminal emulator using Unifont monospace font, DOM `<span>` rendering.
 
+## Architecture
+
+### Overlay compositing
+
+Each visual layer owns its own cell buffer. Renderer blends them at render time:
+
+```
+Renderer._blendOverlays(Y):
+  1. base = main buffer row Y (or scrollback)
+  2. for each overlay (sorted by z):
+       if Y in [ov.y, ov.y+ov.h):
+         for c in [ov.x, ov.x+ov.w):
+           cell = ov.getCell(relY, relC)
+           if cell != null → blended[c] = cell
+  3. _rowToHTML(blended) → innerHTML
+```
+
+| Layer | Z | Buffer owner | Writes via |
+|---|---|---|---|
+| Main buffer (Screen) | 0 | Parser + shell | `term.write()` → Parser |
+| Widget (TSR) | 10 | WidgetBase._buffer | `putc()` → fills own buffer |
+| Dialog | 100 | Dialog._buffer | `_writeStr()` → inline SGR→cell attrs |
+
+No `saveArea`/`restoreArea`, no scroll region protection. Each layer is
+independent; the main buffer is never touched by overlays.
+
+### Screen / Parser / Renderer split
+
+`js/terminal.js` was split into three files:
+
+| File | Responsibility | Size |
+|---|---|---|
+| `Screen.js` | Cell buffer, cursor, scroll + SGR state, dirty tracking | pure data |
+| `Parser.js` | VT100 escape state machine → delegates to Screen | no DOM |
+| `Renderer.js` | DOM rows, cursor element, render loop, overlay blend | DOM only |
+| `terminal.js` | Thin coordinator (~100 lines) composing the three | event wiring |
+
+`Terminal` delegates public props/methods to `screen` and `renderer`:
+```js
+get curX() { return this.screen.curX; }
+set curX(v) { this.screen.curX = v; }
+markRowDirty(r) { this.screen.markRowDirty(r); }
+```
+
+### LineEditor extracted
+
+`js/LineEditor.js` handles line buffer, history, tab completion, and key
+dispatch (Arrows, Ctrl+C/D/L, BS, Enter). `DemoShell.handleInput`
+delegates to `this.editor.handleKey(data)` when no dialog/readLine
+is active. Callbacks `onExecute(line)` and `onShowPrompt()` decouple
+editing from shell logic.
+
+### Overlay lifecycle
+
+```
+WidgetBase.start():
+  _buffer = createEmptyBuffer(w, h)
+  _overlay = { y, x, w, h, z:10, getCell }
+  term.addOverlay(_overlay)
+
+WidgetBase.stop():
+  term.removeOverlay(_overlay)
+  _buffer = _overlay = null
+
+Dialog.open():
+  _initBuffer()
+  _overlay = { y, x, w, h, z:100, getCell }
+  term.addOverlay(_overlay)
+  stack.push(y, h)        // cursor state save
+  _drawFrame() + refreshContent()
+
+Dialog.close():
+  stack.pop()             // cursor state restore, hooks fire
+  term.removeOverlay(_overlay)
+```
+
+### SGR→cell attrs in dialogs
+
+`_writeStr(buf, y, x, str, maxX)` parses SGR sequences inline:
+- `\x1B[1m` → `cell.bold = true`
+- `\x1B[36m` → `cell.fg = 6`
+- `\x1B[0m` → reset to defaults
+- Non-SGR chars become `_makeCell(ch, attr)` entries in `buf[y]`
+
 ## Changes Made This Session
 
 ### Done
-- **`_processCSI` private marker `?` fix** (`terminal.js`): `?` (0x3F) was being swallowed by parameter range `0x30-0x3F` before private marker check, breaking `\x1B[?25h/l`. Changed to collect all bytes into `n`, strip private marker at final-byte time.
-- **Menu save/restore off-by-one** (`shell.js`): Save started at `buffer[Y]` (0-indexed for buffer) but drawing used `Y` as 1-indexed CSI param, offsetting by 1 row. First menu row was never saved, persisted after restore. Fixed by saving from `Y-1` and passing `Y+1, X+1` to CSI H in `_drawMenu()`.
-- **Cursor position not restored after menu** (`shell.js`): After menu drawing, `curX/curY` left at menu's last position; `showPrompt()` wrote `$ ` there. Fixed by saving/restoring cursor in `_exitMenu()`.
-- **Box-drawing `_isWide` false positive** (`terminal.js` + `shell.js`): U+2500-25FF rendered at 16px in Unifont's Canvas measureText due to font metrics, causing menu drawing to wrap past saved rows. Fixed by returning `false` for 0x2500-0x25FF, 0x2190-0x21FF, 0x2300-0x23FF before canvas check.
-- **`showPrompt()` unconditional after `execute('menu')`** (`shell.js`): `handleInput` called `showPrompt()` even after menu activation. Fixed with `if (!this.menuMode)` guard.
-- **Footer ⏎ glyph width misalignment** (`shell.js`): `\u23CE` (⏎) only exists in the ext font with advance 64 units (16px at 16px font-size), while all core glyphs are 32 units (8px). This caused the footer span to render 8px wider than expected, shifting the right border `│` rightward. Fixed by replacing `\u23CE` (⏎) with `\u21A9` (↩) which is in core at 8px — standard Return/Enter key symbol.
-- **Menu scrolling + scroll bar** (`shell.js`): Menu now shows max 5 items at a time; arrow keys scroll the window when selection reaches top/bottom edge. Right side of each item row has a scroll bar column with `█` (thumb) and `░` (track). Content width reduced by 1 (W-3) to make room. Added `menuScrollOffset`, `menuVisibleCount`, `_drawScrollBar()`, `_redrawItemArea()`.
-- **Dialog extraction + InputDialog** (`dialog.js` + `shell.js`): Extracted dialog framework into reusable `dialog.js` with `Dialog` base class, `MenuDialog`, and `InputDialog`. `shell.js` now delegates all dialog lifecycle to these classes. Added `calc` item to menu: opens an `InputDialog` for typing an expression; Enter closes both dialogs and runs `calc`, ESC returns to menu.
-- **`_bufWidth()` CJK padding fix** (`dialog.js`): All `padEnd()/.length` in dialog frame title, footer, items, and input field replaced with `_bufWidth()` via `term._isWide()` — right border `│` no longer shifts when content contains CJK fullwidth chars.
-- **StateStack for nested dialog state** (`dialog.js` + `shell.js`): New `StateStack` class saves buffer area + cursor position + cursor visibility in one push; nested dialogs (menu → input) properly restore cursor-hidden when returning to parent. ESC from InputDialog no longer shows blinking cursor on the menu.
-- **InputDialog blinking cursor** (`dialog.js`): `_showCursor()` positions the terminal cursor at the input field end after every render. Replaces the hidden-cursor default of dialogs.
-- **256-color CSS classes** (`style.css` + `terminal.js`): Added `.q16`–`.q255` and `.b16`–`.b255` (480 CSS rules) for the xterm 256-color palette (6×6×6 cube + grayscale ramp). `_spanClass` now outputs `qN`/`bN` for N ≤ 255 instead of just 15; `XTERM_COLORS` expanded from 16 to 256 entries for cursor rendering.
-- **`_bufWidth` CSI escape fix** (`dialog.js`): CSI introducer `[` (0x5B) was treated as escape terminator (it falls in 0x40–0x7E), causing param bytes to be counted as visible chars. All dialog content centering (title, footer, items, messages) was off by the length of embedded SGR sequences. Fixed by detecting `0x5B` and keeping escape state active until the real final byte.
-- **Directory restructure**: `style.css` → `css/`; `terminal.js`, `dialog.js`, `shell.js` → `js/`. All paths updated in `index.html` and font URLs in CSS.
-- **Help updated**: Added `menu` to the command list.
-- **Command extraction + CmdBase** (`js/cmd/`): All 13 inline command handlers extracted from `shell.js` into individual files under `js/cmd/`. New `CmdBase` abstract class with `execute(args)`, `print(text)`, and static metadata (`commandName`, `help`, `menu`). Shell exposes `_registerCommands()` which iterates a `classes` array — adding a new command = 1 file + 1 `<script>` tag + 1 entry in the array. `help` command dynamically iterates `_cmdList` instead of hardcoding text.
+- **Overlay compositing architecture**: Widgets and dialogs now own their own cell buffers. Renderer blends them over the main buffer at render time via `_blendOverlays()` in `Renderer.js`. No more `saveArea`/`restoreArea` or scroll region protection.
+- **Screen/Parser/Renderer split** (`js/terminal.js` → `Screen.js` + `Parser.js` + `Renderer.js`): Terminal data model, escape parser, and DOM renderer separated into independent files. Terminal stays as thin coordinator (~100 lines).
+- **LineEditor extraction** (`js/LineEditor.js`): Shell line editing (history, tab completion, key dispatch) extracted from `shell.js` into its own class.
+- **WidgetBase buffer rewrite** (`js/cmd/WidgetBase.js`): Now owns `_buffer`, `putc()`, and overlay lifecycle (`_overlay`). `start()`/`stop()` register/unregister overlay on the terminal. No more `_saveBacking`/`_restoreBacking`.
+- **Dialog buffer rewrite** (`js/dialog.js`): All rendering now fills `_buffer` via `_writeStr()` (inline SGR→cell attrs) instead of `term.write()` with CSI sequences. `open()`/`close()` manage overlay registration. StateStack simplified to cursor-only (no buffer save/restore).
+- **ShellWidgetManager simplified** (`js/shell.js`): No `_setScrollTop()`, no scrollTop/scrollBottom management. Widgets register overlays independently via WidgetBase.
 
-### Command Architecture
+### Removed
+- `saveArea()`, `restoreArea()`, `saveCursor()`, `restoreCursor()` — no longer needed
+- `WidgetBase._saveBacking()`, `_restoreBacking()`
+- `ShellWidgetManager._setScrollTop()`
+
+## Command Architecture
 
 ```
 js/cmd/
-├── CmdBase.js    # execute(args) | print(text) | static commandName/help/menu
+├── CmdBase.js    # execute(args) | print(text) | readLine(cb) | static commandName/help/menu
 ├── help.js       Help      — iterates shell._cmdList dynamically
 ├── clear.js      Clear
 ├── echo.js       Echo
@@ -40,7 +119,12 @@ js/cmd/
 ├── calc.js       Calc
 ├── exit.js       Exit
 ├── whoami.js     Whoami
-└── menu.js       MenuCmd   — execute delegates to shell._menuCmd()
+├── menu.js       MenuCmd   — execute delegates to shell._menuCmd()
+├── widget.js     WidgetCmd — toggle TSR clock
+├── clock.js      ClockCmd
+├── quiz.js       Quiz
+└── widgets/
+    └── ClockWidget.js
 ```
 
 **CmdBase contract:**
@@ -49,7 +133,7 @@ js/cmd/
 |---|---|
 | `constructor(shell)` | Receives DemoShell instance; `this.term` available |
 | `execute(args)` | Command logic, called with parsed arg array |
-| `print(text)` | Alias for `this.term.write(text)` |
+| `print(text)` | Enqueues text to shell's Typewriter |
 | `readLine(callback)` | Request next line of input; callback receives trimmed string |
 | `static get commandName()` | Command name string, e.g. `'fortune'` |
 | `static get help()` | Description shown in `help` output |
@@ -58,23 +142,20 @@ js/cmd/
 **Registration flow:**
 
 ```js
-// shell.js
 _registerCommands() {
     const classes = [Help, Clear, Echo, ..., MenuCmd];
     for (const Cls of classes) {
         const cmd = new Cls(this);
         this.commands[name] = cmd.execute.bind(cmd);
-        this._cmdList.push({ name, help });  // help iterates this
-        if (menu) this.menuItems.push({ name, desc: menu });  // menu dialog uses this
+        this._cmdList.push({ name, help });
+        if (menu) this.menuItems.push({ name, desc: menu });
     }
 }
 ```
 
-Only `menu` command is special (invokes `shell._menuCmd()` dialog flow). `calc` command itself is stateless — the InputDialog → calc pipe is handled entirely by shell's dialog lifecycle and `_pendingAction`.
-
 ### readLine — Interactive Input for Commands
 
-Commands that need multi-line interaction (e.g. `quiz`) use `readLine` instead of hacking into shell state:
+Commands that need multi-line interaction (e.g. `quiz`) use `readLine`:
 
 ```
 CmdBase.readLine(callback)
@@ -94,27 +175,43 @@ CmdBase.readLine(callback)
 4. normal shell editing → this.line
 ```
 
-**Critical rule:** `_readLineBuffer` is completely independent from `this.line`. A cmd using `readLine` must NOT access `this.line` or `this.shell.line` — the input arrives only through the callback parameter.
+**Critical rule:** `_readLineBuffer` is completely independent from `this.line`.
+A cmd using `readLine` must NOT access `this.line` or `this.shell.line` — the
+input arrives only through the callback parameter.
 
-**Why separate buffer?** The shell's normal editing loop accumulates command text in `this.line`. After `execute()` returns, `this.line` still holds the original command text (e.g. `"quiz"`). If `readLine` shared `this.line`, the next keystrokes would append to the old command text, producing `"quiz40"` instead of `"40"`. The independent `_readLineBuffer` avoids this entirely.
+### Typewriter — animated command output
 
-### Key Constraints
+`Typewriter` buffers text and releases one token per tick:
+
+| Token | Speed | Example |
+|---|---|---|
+| Wide/CJK | 8ms | 漢字 |
+| Half-width | 4ms | a, b, $ |
+| Escape seq | instant | `\x1B[31m` |
+| Newline | instant | `\n` |
+
+- `CmdBase.print()` → `shell.print()` → `Typewriter.enqueue()`
+- Shell defers `showPrompt()` until typewriter drain
+- Only `Ctrl+C` passes through during animation (aborts + shows prompt)
+- Dialog rendering, widget buffers, and shell prompt bypass typewriter
+
+## Key Constraints
 - DOM rendering (not Canvas)
 - 80×25 viewport, auto-scaled
 - inline-block span width fix would be needed for any span mixing 32-unit and 64-unit glyphs
 
-### Critical Font Metrics
+## Critical Font Metrics
 - core font (eascii-core): all glyphs have advance=32 units = 8px at 16px font-size
 - ext font (eascii-ext): glyphs like ⏎, ✓, ✖ have advance=64 units = 16px at 16px font-size
 - U+2191 (↑), U+2193 (↓) are in core at 8px — only ⏎ was problematic
 
-### Dialog Frame & Item Positioning
+## Dialog Frame & Item Positioning (buffer-based)
 
-Dialogs write box-drawing chars directly into the terminal buffer via `_t(row, s)` which wraps `\x1B[Y;XH` CSI:
+Dialogs render into their own `_buffer[][]` via `_writeStr()`, not `term.write()`.
 
 ```js
 _t(row, s) {  // row = 0-indexed offset from dialog.y
-    this.term.write(`\x1B[${this.y + 1 + row};${this.x + 1}H${s}`);
+    _writeStr(this._buffer, row, 0, s, this.width);
 }
 ```
 
@@ -126,37 +223,65 @@ _t(row, s) {  // row = 0-indexed offset from dialog.y
 | Separator | `├` + `─`×(W-2) + `┤` | W |
 | Content row | `│` + content(W-2) + `│` | W |
 
-**Centering content within borders:**
-
-```
-contentWidth = W - 2                 // space between │ and │
-padTotal = contentWidth - contentLen // remaining space
-leftPad = Math.floor(padTotal / 2)
-rightPad = Math.ceil(padTotal / 2)
-line = '│' + ' '.repeat(leftPad) + content + ' '.repeat(rightPad) + '│'
-```
-
-**Highlight bar (inverted item):**
-
-Escape sequences (`\x1B[7m`/`\x1B[0m`) take zero cell width. Only visible chars count:
+**Centering:** `_centerRow(row, content)` builds one string with SGR inline
+and writes it via `_writeStr`:
 
 ```js
-itemStr = '  EXIT  ';           // visible: 8 chars
-itemLen = itemStr.length;       // 8 (or _bufWidth() for CJK)
-line = '│' + padLeft + '\x1B[7m' + itemStr + '\x1B[0m' + padRight + '│';
+_centerRow(row, content) {
+    pad = W - 2 - _bufWidth(content)
+    _writeStr(buf, row, 0, '│' + spaces + content + spaces + '│', W)
+}
 ```
 
-**CJK safety:** All string padding calculations use `_bufWidth(str)` instead of `str.length` when content may contain fullwidth chars, since CJK characters occupy 2 cells each. (`_bufWidth` sums `_isWide(ch) ? 2 : 1` per char.)
+**Highlight bar (inverted item):** SGR embedded directly in the string:
 
-**`_bufWidth` ANSI skip:** `_bufWidth` also skips ANSI escape sequences (`\x1B` + params + final byte). A bug caused CSI introducer `[` (0x5B) to be treated as the sequence terminator (it falls in the final-byte range 0x40–0x7E), making parameter bytes like `1`, `;`, `3`, `2`, `m` in `\x1B[1;32m` counted as visible chars. Fixed by detecting CSI with `code === 0x5B` and keeping the escape flag active until the real final byte (`m`, `H`, etc.).
+```js
+s = '│';
+if (sel) s += '\x1B[7m\x1B[1m';
+s += content + ' '.repeat(pad);
+if (sel) s += '\x1B[0m';
+_writeStr(buf, row, 0, s, W);
+```
 
-### Done This Session
-- **Typewriter effect** (`js/typewriter.js` + `shell.js` + `CmdBase.js`): New `Typewriter` class buffers text output and releases one character per tick (wide/CJK = 100ms, half-width = 50ms). Escape sequences pass through instantly. All command output via `print()` is now animated. `Ctrl+C` during output aborts and shows prompt instantly. Dialog rendering and the shell prompt itself bypass the typewriter.
+**CJK safety:** `_bufWidth(str)` skips SGR sequences and sums cell widths
+(`_isWide(ch) ? 2 : 1`). Used for centering and cursor positioning.
 
-  **Architecture:**
-  - `Typewriter.enqueue(text)` tokenizes input (visible chars, escape seqs, newlines), processes queue via `setTimeout`
-  - `CmdBase.print()` → `shell.print()` → `typewriter.enqueue()` (was `this.term.write()`)
-  - Shell defers `showPrompt()` until typewriter drain via `_checkTypewriterDrain()` / `_pendingPrompt`
-  - `handleInput` checks `typewriter.isActive()` before dialog/readLine/editing — only `Ctrl+C` passes through
-  - `clear.js` and `quiz.js` changed from `this.term.write()` to `this.print()` for consistency
+**`_bufWidth` ANSI skip:** `_bufWidth` detects `[` (0x5B) as a CSI introducer
+(not a terminator), so param bytes like `1`, `;`, `32`, `m` in `\x1B[1;32m`
+are not counted as visible chars.
 
+### WidgetBase buffer
+
+```js
+this._buffer[y][x] = null  →  transparent (overlay skips this cell)
+this._buffer[y][x] = cell  →  opaque (overlays main buffer)
+
+putc(x, y, ch, fg, bg, attrs) {
+    cell = { ch, fg, bg, bold, dim, italic, underline, inverse, ... }
+    this._buffer[y][x] = cell;
+    term.markRowDirty(this._y + y);
+}
+```
+
+ClockWidget uses `putc()` to fill 8 cells with time chars (fg=7, bg=4):
+
+```js
+draw() {
+    const time = formatTime(new Date());
+    for (let i = 0; i < this._w; i++)
+        this.putc(i, 0, time[i] || ' ', 7, 4);
+}
+```
+
+## relevant Files
+
+- `js/Screen.js`: Cell buffer, cursor, scroll/SGR state, dirty tracking, overlays[]
+- `js/Parser.js`: VT100 escape state machine
+- `js/Renderer.js`: DOM rows, cursor, render loop, `_blendOverlays()`
+- `js/terminal.js`: Thin coordinator composing Screen/Parser/Renderer
+- `js/LineEditor.js`: Line editing, history, tab completion
+- `js/shell.js`: DemoShell orchestrates editor/typewriter/stateStack/dialogs/widgets
+- `js/dialog.js`: Dialog base + Menu/Input/Clock/ShowDialog, `_writeStr`, StateStack
+- `js/typewriter.js`: Animated text output
+- `js/cmd/WidgetBase.js`: Overlay lifecycle, `_buffer`, `putc()`
+- `js/cmd/widgets/ClockWidget.js`: TSR clock using `putc()`
