@@ -102,8 +102,21 @@ export class Renderer {
                 const x0 = ov.x;
                 const w = ov.w || (this.screen.cols - x0);
                 for (let c = x0; c < x0 + w && c < blended.length; c++) {
-                    const cell = ov.getCell(relRow, c - x0);
-                    if (cell) blended[c] = cell;
+                    const ovCell = ov.getCell(relRow, c - x0);
+                    if (!ovCell) continue;
+                    const prev = blended[c];
+                    blended[c] = ovCell;
+                    if (c > 0 && blended[c - 1] && blended[c - 1].width === 2) {
+                        blended[c - 1] = { ...blended[c - 1], width: 1, _clipRight: true };
+                    }
+                    if (c + 1 < blended.length && blended[c + 1] && blended[c + 1].width === 0) {
+                        blended[c + 1] = {
+                            ...blended[c + 1],
+                            ch: prev.ch,
+                            width: 1,
+                            _clipLeft: true,
+                        };
+                    }
                 }
             }
         }
@@ -156,7 +169,8 @@ export class Renderer {
                 if (cf !== fg || cb !== bg || c.bold !== bold || c.dim !== dim ||
                     c.italic !== cell.italic || c.underline !== cell.underline ||
                     c.crossedOut !== cell.crossedOut || c.blink !== cell.blink ||
-                    c.inverse !== inverse) break;
+                    c.inverse !== inverse ||
+                    c._clipRight !== cell._clipRight || c._clipLeft !== cell._clipLeft) break;
                 j++;
             }
 
@@ -173,7 +187,14 @@ export class Renderer {
             let style = '';
             if (typeof fg === 'string') style += 'color:' + fg + ';';
             if (typeof bg === 'string') style += 'background-color:' + bg + ';';
-            const styleAttr = style ? ' style="' + style + '"' : '';
+            let clipStyle = '';
+            if (cell._clipRight) {
+                clipStyle = 'display:inline-block;width:' + this.charWidth + 'px;height:' + this.charHeight + 'px;overflow:hidden;vertical-align:top;';
+            } else if (cell._clipLeft) {
+                clipStyle = 'display:inline-block;width:' + this.charWidth + 'px;height:' + this.charHeight + 'px;overflow:hidden;text-indent:-' + this.charWidth + 'px;vertical-align:top;';
+            }
+            const combinedStyle = clipStyle + style;
+            const styleAttr = combinedStyle ? ' style="' + combinedStyle + '"' : '';
             html += '<span class="' + cls + '"' + styleAttr + '>' + text + '</span>';
             i = j;
         }

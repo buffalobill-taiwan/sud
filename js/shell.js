@@ -12,6 +12,7 @@ import { formatTime } from './time.js';
 import {
     Help, Clear, Echo, DateCmd, Uname, Neofetch, Cowsay, Ascii,
     Fortune, Calc, Exit, Whoami, MenuCmd, ClockCmd, WidgetCmd, Quiz,
+    DvdCmd,
 } from './cmd/index.js';
 
 export class DemoShell {
@@ -56,7 +57,7 @@ export class DemoShell {
 
     _registerCommands() {
         const classes = [
-            Ascii, Calc, Clear, ClockCmd, Cowsay, DateCmd, Echo,
+            Ascii, Calc, Clear, ClockCmd, Cowsay, DateCmd, DvdCmd, Echo,
             Exit, Fortune, Help, MenuCmd, Neofetch, Quiz, Uname, Whoami, WidgetCmd,
         ];
         for (const Cls of classes) {

@@ -17,3 +17,5 @@ export { WidgetCmd } from './widget.js';
 export { WidgetBase } from './WidgetBase.js';
 export { ClockWidget } from './widgets/ClockWidget.js';
 export { Quiz } from './quiz.js';
+export { DvdCmd } from './dvd.js';
+export { DVDWidget } from './widgets/DVDWidget.js';
