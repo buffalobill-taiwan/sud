@@ -169,29 +169,31 @@ export class Dialog {
         this.term.write(`\x1B[${this.y + 1 + row};${this.x + 1}H${s}`);
     }
 
+    _centerRow(row, content) {
+        const W = this.width;
+        const pad = Math.max(0, W - 2 - this._bufWidth(content));
+        this._t(row, '\u2502' + ' '.repeat(Math.floor(pad / 2)) + content + ' '.repeat(Math.ceil(pad / 2)) + '\u2502');
+    }
+
+    _leftRow(row, content) {
+        const W = this.width;
+        const pad = Math.max(0, W - 2 - this._bufWidth(content));
+        this._t(row, '\u2502' + content + ' '.repeat(pad) + '\u2502');
+    }
+
     _drawFrame() {
         const W = this.width;
-        const V = '\u2502';
         const H = '\u2500';
 
         this._t(0, '\u250C' + H.repeat(W - 2) + '\u2510');
 
         if (this.title) {
-            const titlePad = W - 4 - this._bufWidth(this.title);
-            const titleL = Math.floor(titlePad / 2);
-            const titleR = Math.ceil(titlePad / 2);
-            this._t(1, V + ' ' + ' '.repeat(Math.max(0, titleL)) + '\x1B[1m' + this.title + '\x1B[22m' + ' '.repeat(Math.max(0, titleR)) + ' ' + V);
+            this._centerRow(1, ' \x1B[1m' + this.title + '\x1B[22m ');
             this._t(2, '\u251C' + H.repeat(W - 2) + '\u2524');
         }
 
         this._t(this.h - 3, '\u251C' + H.repeat(W - 2) + '\u2524');
-
-        const foot = this.footer;
-        const footPad = W - 4 - this._bufWidth(foot);
-        const footL = Math.floor(footPad / 2);
-        const footR = Math.ceil(footPad / 2);
-        this._t(this.h - 2, V + ' ' + ' '.repeat(Math.max(0, footL)) + foot + ' '.repeat(Math.max(0, footR)) + ' ' + V);
-
+        this._centerRow(this.h - 2, ' ' + this.footer + ' ');
         this._t(this.h - 1, '\u2514' + H.repeat(W - 2) + '\u2518');
     }
 
@@ -366,16 +368,8 @@ export class InputDialog extends Dialog {
     }
 
     _renderContent() {
-        const W = this.width;
-        const V = '\u2502';
-
-        const promptLine = '  ' + this.prompt;
-        const promptPad = W - 2 - this._bufWidth(promptLine);
-        this._t(3, V + promptLine + ' '.repeat(Math.max(0, promptPad)) + V);
-
-        const inputLine = ' > ' + this.inputText;
-        const inputPad = W - 2 - this._bufWidth(inputLine);
-        this._t(4, V + inputLine + ' '.repeat(Math.max(0, inputPad)) + V);
+        this._leftRow(3, '  ' + this.prompt);
+        this._leftRow(4, ' > ' + this.inputText);
     }
 
     _onKey(data) {
@@ -429,17 +423,8 @@ export class ClockDialog extends Dialog {
 
     _renderContent() {
         const t = formatTime(new Date());
-        const W = this.width;
-        const timePad = Math.floor((W - 2 - 8) / 2);
-        this._t(1, '\u2502' + ' '.repeat(timePad) + '\x1B[36m' + t + '\x1B[0m' +
-               ' '.repeat(W - 2 - 8 - timePad) + '\u2502');
-        const itemStr = '  EXIT  ';
-        const itemLen = 8;
-        const itemPad = (W - 2 - itemLen);
-        const itemL = Math.floor(itemPad / 2);
-        const itemR = Math.ceil(itemPad / 2);
-        this._t(2, '\u2502' + ' '.repeat(itemL) + '\x1B[7m' + itemStr + '\x1B[0m' +
-               ' '.repeat(itemR) + '\u2502');
+        this._centerRow(1, '\x1B[36m' + t + '\x1B[0m');
+        this._centerRow(2, '\x1B[7m  EXIT  \x1B[0m');
     }
 
     _onKey(data) {
@@ -465,13 +450,8 @@ export class ShowDialog extends Dialog {
     }
 
     _renderContent() {
-        const W = this.width;
         for (let i = 0; i < this._lines.length; i++) {
-            const line = this._lines[i];
-            const pad = Math.max(0, W - 2 - this._bufWidth(line));
-            const l = Math.floor(pad / 2);
-            const r = Math.ceil(pad / 2);
-            this._t(1 + i, '\u2502' + ' '.repeat(l) + line + ' '.repeat(r) + '\u2502');
+            this._centerRow(1 + i, this._lines[i]);
         }
     }
 

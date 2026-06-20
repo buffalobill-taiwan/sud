@@ -152,6 +152,11 @@ export class DemoShell {
                     }
                     continue;
                 }
+                if (code === 0x1B) {
+                    if (data[i + 1] === '[' || data[i + 1] === 'O') i += 2;
+                    continue;
+                }
+                if (code < 0x20) continue;
                 this._readLineBuffer += ch;
                 this.term.write(ch);
             }
