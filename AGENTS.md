@@ -155,8 +155,9 @@ Dialog.close():
 - **`readLine` guard**: Warns on duplicate call before overwriting.
 - **rAF resize debounce**: Replaced `setTimeout(80ms)` with `requestAnimationFrame` debounce.
 - **Scrollback indicator**: ` (MORE)` overlay via `.scroll-indicator` CSS class, toggled when `viewOffset > 0`.
-- **Inline styles → CSS classes**: Moved redundant `container.position/top/left` (already in `#screen` CSS); scroll indicator static props moved to `.scroll-indicator` CSS, `display` toggle uses `classList.toggle('visible')`; cursor `text-align` and `font-family` moved to `#cursor` CSS. Reduced inline style assignments from 30 to 23.
-- **XTERM_COLORS removed**: Replaced 46-line array with algorithmic `colToHex()` in Renderer.js using the 256-color xterm palette (16 fixed + 6×6×6 cube + 24-gray ramp). All normal cell colors go through CSS classes `.q<N>`/`.b<N>`; cursor colors computed on-the-fly from the palette algorithm. No color hex lookup table in JS anymore.
+- **Screen.getCellAt**: Encapsulated overlay/buffer cell lookup in Screen. `_renderCursor` now calls `screen.getCellAt(curX, curY)` instead of directly accessing `screen.overlays` and `screen.buffer`.
+- **Inline styles → CSS classes**: Moved redundant `container.position/top/left` (already in `#screen` CSS); scroll indicator static props moved to `.scroll-indicator` CSS, `display` toggle uses `classList.toggle('visible')`; cursor `text-align` and `font-family` moved to `#cursor` CSS; copy textarea uses `.clip-helper` class. Reduced inline style assignments from 30 to 23.
+- **XTERM_COLORS removed**: Replaced 46-line array with CSS classes `.b<N>`/`.q<N>` directly — cursor colors set via `className = 'b' + fg + ' q' + bg`. No color hex lookup table or algorithmic function in JS anymore.
 
 ### Removed
 - `saveArea()`, `restoreArea()`, `saveCursor()`, `restoreCursor()` — no longer needed
@@ -170,7 +171,10 @@ Dialog.close():
 - `Renderer.js` redundant `container.style.position/top/left` — already in `#screen` CSS
 - `Renderer.js` scroll-indicator `style.cssText` — replaced by `.scroll-indicator` CSS class
 - `Renderer.js` cursor `textAlign`/`fontFamily` inline — moved to `#cursor` CSS
-- `XTERM_COLORS` array from `Screen.js` — replaced by `colToHex()` algorithmic function in `Renderer.js`
+- `XTERM_COLORS` array from `Screen.js` — CSS classes `.q<N>`/`.b<N>` handle all color rendering
+- `colToHex()` from `Renderer.js` — cursor colors use CSS classes directly, no algorithmic lookup needed
+- `Renderer.js` cursor `style.backgroundColor`/`style.color` inline — replaced by `className = 'b' + fg + ' q' + bg`
+- `terminal.js` copy textarea `style.position`/`style.opacity` inline — replaced by `.clip-helper` CSS class
 
 ## Command Architecture
 
