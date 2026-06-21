@@ -69,13 +69,17 @@ export class WidgetBase {
         const newX = Math.max(0, Math.min(cols - this._w, col - this._dragOffX));
         const newY = Math.max(0, Math.min(rows - this._h, row - this._dragOffY));
         if (newX !== this._x || newY !== this._y) {
-            for (let r = this._y; r < this._y + this._h; r++) this.term.markRowDirty(r);
+            this._markDirty();
             this._x = newX;
             this._y = newY;
             this._overlay.x = newX;
             this._overlay.y = newY;
-            for (let r = newY; r < newY + this._h; r++) this.term.markRowDirty(r);
+            this._markDirty();
         }
+    }
+
+    _markDirty() {
+        for (let r = this._y; r < this._y + this._h; r++) this.term.markRowDirty(r);
     }
 
     endDrag() {
