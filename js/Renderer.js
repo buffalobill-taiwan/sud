@@ -19,12 +19,16 @@ export class Renderer {
         this._loopRunning = false;
 
         this.rowEls = [];
+        this.cellEls = [];
         this.cursorEl = null;
 
         this._initDOM();
     }
 
     _initDOM() {
+        const cols = this.screen.cols;
+        const rows = this.screen.rows;
+
         this.container.style.position = 'absolute';
         this.container.style.top = '0';
         this.container.style.left = '0';
@@ -34,11 +38,21 @@ export class Renderer {
         this.container.appendChild(this.cursorEl);
 
         this.rowEls = [];
-        for (let i = 0; i < this.screen.rows; i++) {
-            const row = document.createElement('div');
-            row.className = 'row';
-            this.container.appendChild(row);
-            this.rowEls.push(row);
+        this.cellEls = [];
+        for (let r = 0; r < rows; r++) {
+            const rowEl = document.createElement('div');
+            rowEl.className = 'row';
+            this.container.appendChild(rowEl);
+            this.rowEls.push(rowEl);
+
+            const cellRow = [];
+            for (let c = 0; c < cols; c++) {
+                const span = document.createElement('span');
+                span.textContent = ' ';
+                rowEl.appendChild(span);
+                cellRow.push(span);
+            }
+            this.cellEls.push(cellRow);
         }
 
         this._setScale(1);
@@ -74,12 +88,49 @@ export class Renderer {
 
     _renderRow(rowIdx) {
         const dataRow = this._getDataRow(rowIdx);
+        const cellRow = this.cellEls[rowIdx];
+        const cols = this.screen.cols;
+
         if (!dataRow) {
-            this.rowEls[rowIdx].textContent = '';
+            for (let c = 0; c < cols; c++) {
+                const span = cellRow[c];
+                span.textContent = ' ';
+                span.className = '';
+                span.style.cssText = '';
+            }
             return;
         }
+
         const blended = this._blendOverlays(rowIdx, dataRow);
-        this.rowEls[rowIdx].innerHTML = this._rowToHTML(blended);
+
+        for (let c = 0; c < cols; c++) {
+            const cell = blended[c];
+            const span = cellRow[c];
+
+            if (cell.width === 0) {
+                span.textContent = '';
+                span.className = '';
+                span.style.cssText = '';
+                continue;
+            }
+
+            span.textContent = cell.ch || ' ';
+
+            let fg = cell.fg;
+            let bg = cell.bg;
+            if (cell.inverse) { const t = fg; fg = bg; bg = t; }
+            if (cell.bold && typeof fg === 'number' && fg < 8) fg += 8;
+
+            span.className = this._spanClass(fg, bg, cell.italic, cell.underline, cell.crossedOut, cell.blink, cell.dim);
+
+            if (cell._clipRight) {
+                span.style.cssText = 'display:inline-block;width:' + this.charWidth + 'px;height:' + this.charHeight + 'px;overflow:hidden;vertical-align:top;';
+            } else if (cell._clipLeft) {
+                span.style.cssText = 'display:inline-block;width:' + this.charWidth + 'px;height:' + this.charHeight + 'px;overflow:hidden;text-indent:-' + this.charWidth + 'px;vertical-align:top;';
+            } else {
+                span.style.cssText = '';
+            }
+        }
     }
 
     _blendOverlays(displayRow, baseRow) {
@@ -136,69 +187,6 @@ export class Renderer {
             return screen.buffer[idx - screen.scrollback.length];
         }
         return null;
-    }
-
-    _rowToHTML(row) {
-        let html = '';
-        let i = 0;
-        while (i < row.length) {
-            const cell = row[i];
-            if (cell.width === 0) { i++; continue; }
-            let fg = cell.fg;
-            let bg = cell.bg;
-            const bold = cell.bold;
-            const dim = cell.dim;
-            const inverse = cell.inverse;
-
-            if (inverse) {
-                const tmp = fg; fg = bg; bg = tmp;
-            }
-            if (bold && typeof fg === 'number' && fg < 8) fg += 8;
-
-            const cls = this._spanClass(fg, bg, cell.italic, cell.underline, cell.crossedOut, cell.blink, dim);
-            let j = i + 1;
-            while (j < row.length) {
-                const c = row[j];
-                let cf = c.fg;
-                let cb = c.bg;
-                const b = c.bold;
-                const d = c.dim;
-                const inv = c.inverse;
-                if (inv) { const t = cf; cf = cb; cb = t; }
-                if (b && typeof cf === 'number' && cf < 8) cf += 8;
-                if (cf !== fg || cb !== bg || c.bold !== bold || c.dim !== dim ||
-                    c.italic !== cell.italic || c.underline !== cell.underline ||
-                    c.crossedOut !== cell.crossedOut || c.blink !== cell.blink ||
-                    c.inverse !== inverse ||
-                    c._clipRight !== cell._clipRight || c._clipLeft !== cell._clipLeft) break;
-                j++;
-            }
-
-            let text = '';
-            for (let k = i; k < j; k++) {
-                const ch = row[k].ch;
-                if (ch === '&') text += '&amp;';
-                else if (ch === '<') text += '&lt;';
-                else if (ch === '>') text += '&gt;';
-                else if (ch === '"') text += '&quot;';
-                else text += ch;
-            }
-
-            let style = '';
-            if (typeof fg === 'string') style += 'color:' + fg + ';';
-            if (typeof bg === 'string') style += 'background-color:' + bg + ';';
-            let clipStyle = '';
-            if (cell._clipRight) {
-                clipStyle = 'display:inline-block;width:' + this.charWidth + 'px;height:' + this.charHeight + 'px;overflow:hidden;vertical-align:top;';
-            } else if (cell._clipLeft) {
-                clipStyle = 'display:inline-block;width:' + this.charWidth + 'px;height:' + this.charHeight + 'px;overflow:hidden;text-indent:-' + this.charWidth + 'px;vertical-align:top;';
-            }
-            const combinedStyle = clipStyle + style;
-            const styleAttr = combinedStyle ? ' style="' + combinedStyle + '"' : '';
-            html += '<span class="' + cls + '"' + styleAttr + '>' + text + '</span>';
-            i = j;
-        }
-        return html;
     }
 
     _spanClass(fg, bg, italic, underline, crossedOut, blink, dim) {
@@ -301,13 +289,35 @@ export class Renderer {
 
     resizeDOM(newCols, newRows) {
         while (this.rowEls.length < newRows) {
-            const row = document.createElement('div');
-            row.className = 'row';
-            this.container.appendChild(row);
-            this.rowEls.push(row);
+            const rowEl = document.createElement('div');
+            rowEl.className = 'row';
+            this.container.appendChild(rowEl);
+            this.rowEls.push(rowEl);
+            const cellRow = [];
+            for (let c = 0; c < newCols; c++) {
+                const span = document.createElement('span');
+                span.textContent = ' ';
+                rowEl.appendChild(span);
+                cellRow.push(span);
+            }
+            this.cellEls.push(cellRow);
         }
         while (this.rowEls.length > newRows) {
             this.container.removeChild(this.rowEls.pop());
+            this.cellEls.pop();
+        }
+        for (let r = 0; r < this.rowEls.length; r++) {
+            const cellRow = this.cellEls[r];
+            const rowEl = this.rowEls[r];
+            while (cellRow.length < newCols) {
+                const span = document.createElement('span');
+                span.textContent = ' ';
+                rowEl.appendChild(span);
+                cellRow.push(span);
+            }
+            while (cellRow.length > newCols) {
+                rowEl.removeChild(cellRow.pop());
+            }
         }
         this._setScale(this._scale);
     }

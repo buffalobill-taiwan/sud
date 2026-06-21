@@ -77,7 +77,7 @@ export class DemoShell {
         this.term.write('\x1B[2J\x1B[H');
         this.term.write('\x1B[1;32mOpenCode Terminal v1.0.0\x1B[0m\n');
         this.term.write('Type \x1B[33mhelp\x1B[0m for available commands.\n\n');
-        this.term.write('\x1B[90mAEIOUÀÈÌÒÙ宮商角徵羽あいうえお\x1B[0m\n\n');
+        this.term.write('\x1B[90mAEIOUÀÈÌÒÙ金木水火土鑫森淼焱垚あいうえおアイウエオ\x1B[0m\n\n');
         this.showPrompt();
     }
 

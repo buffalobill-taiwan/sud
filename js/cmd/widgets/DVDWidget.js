@@ -2,15 +2,15 @@ import { WidgetBase } from '../WidgetBase.js';
 
 const COLORS = [1, 2, 3, 4, 5, 6, 9, 10, 11, 12, 13, 14];
 const LOGO = [
-    '\u2554\u2550\u2550\u2550\u2550\u2550\u2550\u2557',
-    '\u2551 DVD  \u2551',
-    '\u255a\u2550\u2550\u2550\u2550\u2550\u2550\u255d',
+    '       ',
+    ' D V D ',
+    '       ',
 ];
 
 export class DVDWidget extends WidgetBase {
     constructor(shell) {
         super(shell);
-        this._w = 8;
+        this._w = 7;
         this._h = 3;
         const cols = shell.term.cols;
         const rows = shell.term.rows;
@@ -82,7 +82,9 @@ export class DVDWidget extends WidgetBase {
     draw() {
         for (let r = 0; r < this._h; r++) {
             for (let c = 0; c < this._w; c++) {
-                this.putc(c, r, LOGO[r][c], this._color, null);
+                const ch = LOGO[r][c];
+                const fg = (ch === 'D' || ch === 'V') ? 0 : this._color;
+                this.putc(c, r, ch, fg, this._color);
             }
         }
     }
