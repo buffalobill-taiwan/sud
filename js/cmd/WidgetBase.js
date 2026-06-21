@@ -1,3 +1,5 @@
+import { makeCell } from '../sgr.js';
+
 export class WidgetBase {
     constructor(shell) {
         this.shell = shell;
@@ -30,6 +32,11 @@ export class WidgetBase {
     }
 
     stop() {
+        if (this._overlay) {
+            for (let r = this._y; r < this._y + this._h; r++) {
+                this.term.markRowDirty(r);
+            }
+        }
         this.term.removeOverlay(this._overlay);
         this._overlay = null;
         this._buffer = null;
@@ -37,12 +44,26 @@ export class WidgetBase {
 
     draw() {}
 
+    setPosition(x, y) {
+        this._x = x;
+        this._y = y;
+        if (this._overlay) {
+            this._overlay.x = x;
+            this._overlay.y = y;
+        }
+    }
+
+    getPosition() {
+        return { x: this._x, y: this._y };
+    }
+
     startDrag(col, row) {
         this._dragOffX = col - this._x;
         this._dragOffY = row - this._y;
     }
 
     moveDrag(col, row) {
+        if (this._dragOffX === undefined) return;
         const cols = this.term.cols;
         const rows = this.term.rows;
         const newX = Math.max(0, Math.min(cols - this._w, col - this._dragOffX));
@@ -57,12 +78,14 @@ export class WidgetBase {
         }
     }
 
-    endDrag() {}
+    endDrag() {
+        this._dragOffX = undefined;
+        this._dragOffY = undefined;
+    }
 
     putc(x, y, ch, fg, bg, attrs) {
         if (y < 0 || y >= this._h || x < 0 || x >= this._w) return;
-        const cell = {
-            ch: ch || ' ',
+        const attr = {
             fg: fg != null ? fg : 7,
             bg: bg != null ? bg : 0,
             bold: attrs && attrs.bold || false,
@@ -73,9 +96,8 @@ export class WidgetBase {
             inverse: attrs && attrs.inverse || false,
             conceal: attrs && attrs.conceal || false,
             crossedOut: attrs && attrs.crossedOut || false,
-            width: 1,
         };
-        this._buffer[y][x] = cell;
+        this._buffer[y][x] = makeCell(ch, attr);
         this.term.markRowDirty(this._y + y);
     }
 

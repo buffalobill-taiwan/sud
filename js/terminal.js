@@ -102,6 +102,22 @@ export class Terminal {
 
     stopRenderLoop() { this.renderer.stopRenderLoop(); }
 
+    dispose() {
+        document.removeEventListener('keydown', this._keydownHandler);
+        this.textarea.removeEventListener('beforeinput', this._beforeInputHandler);
+        document.removeEventListener('keyup', this._keyupHandler);
+        this.textarea.removeEventListener('compositionstart', this._compStartHandler);
+        this.textarea.removeEventListener('compositionend', this._compEndHandler);
+        this.textarea.removeEventListener('paste', this._pasteHandler);
+        this.container.removeEventListener('wheel', this._wheelHandler);
+        this.container.removeEventListener('mousedown', this._mouseDownHandler);
+        document.removeEventListener('mouseup', this._mouseUpHandler);
+        document.removeEventListener('mousemove', this._mouseMoveHandler);
+        this.container.removeEventListener('contextmenu', this._contextHandler);
+        if (this._resizeHandler) window.removeEventListener('resize', this._resizeHandler);
+        this.stopRenderLoop();
+    }
+
     // ── Input / events ──
 
     _send(data) {
@@ -151,50 +167,8 @@ export class Terminal {
         if (ctrl && key === 'v') return;
         if (ctrl && alt && key === 'c') return;
 
-        if ((ctrl && key === 'Insert') || (ctrl && shift && key.toLowerCase() === 'c')) {
-            e.preventDefault();
-            const sel = document.getSelection().toString();
-            if (!sel) return;
-            if (navigator.clipboard) {
-                navigator.clipboard.writeText(sel).catch(() => {});
-            } else {
-                const ta = document.createElement('textarea');
-                ta.value = sel;
-                ta.style.position = 'fixed';
-                ta.style.opacity = '0';
-                document.body.appendChild(ta);
-                ta.select();
-                document.execCommand('copy');
-                document.body.removeChild(ta);
-            }
-            return;
-        }
-        if ((shift && key === 'Insert') || (ctrl && shift && key.toLowerCase() === 'v')) {
-            if (navigator.clipboard) {
-                e.preventDefault();
-                navigator.clipboard.readText().then(text => { if (text) this._send(text); }).catch(() => {});
-            }
-            return;
-        }
-
-        if (ctrl && !shift && key === 'c') { this._send('\x03'); e.preventDefault(); return; }
-        if (ctrl && !shift && key === 'z') { this._send('\x1A'); e.preventDefault(); return; }
-        if (ctrl && !shift && key === 'd') { this._send('\x04'); e.preventDefault(); return; }
-        if (ctrl && !shift && key === 'a') { this._send('\x01'); e.preventDefault(); return; }
-        if (ctrl && !shift && key === 'e') { this._send('\x05'); e.preventDefault(); return; }
-        if (ctrl && !shift && key === 'l') { this._send('\x0C'); e.preventDefault(); return; }
-        if (ctrl && !shift && key === 'u') { this._send('\x15'); e.preventDefault(); return; }
-        if (ctrl && !shift && key === 'k') { this._send('\x0B'); e.preventDefault(); return; }
-        if (ctrl && !shift && key === 'w') { this._send('\x17'); e.preventDefault(); return; }
-        if (ctrl && !shift && key === 'r') { this._send('\x12'); e.preventDefault(); return; }
-        if (ctrl && !shift && key === 'h') { this._send('\x08'); e.preventDefault(); return; }
-        if (ctrl && !shift && key === 't') { this._send('\x14'); e.preventDefault(); return; }
-        if (ctrl && !shift && key === 'y') { this._send('\x19'); e.preventDefault(); return; }
-        if (ctrl && !shift && key === 'n') { this._send('\x0E'); e.preventDefault(); return; }
-        if (ctrl && !shift && key === 'f') { this._send('\x06'); e.preventDefault(); return; }
-        if (ctrl && !shift && key === 'b') { this._send('\x02'); e.preventDefault(); return; }
-        if (ctrl && !shift && key === 'o') { this._send('\x0F'); e.preventDefault(); return; }
-        if (ctrl && !shift && key === 'x') { this._send('\x18'); e.preventDefault(); return; }
+        if (this._handleCopyPaste(e, key, ctrl, shift)) return;
+        if (this._handleCtrlLetter(e, key, ctrl, shift)) return;
 
         if (ctrl && key === 'Backspace') { this._send('\x08'); e.preventDefault(); return; }
         if (alt && key === 'Backspace') { this._send('\x1B\x7F'); e.preventDefault(); return; }
@@ -205,34 +179,7 @@ export class Terminal {
         if (key === 'Tab') { this._send(shift ? '\x1B[Z' : '\t'); e.preventDefault(); return; }
         if (key === 'Escape') { this._send('\x1B'); e.preventDefault(); return; }
 
-        let mod = 1;
-        if (ctrl && shift && alt) mod = 8;
-        else if (ctrl && alt) mod = 7;
-        else if (ctrl && shift) mod = 6;
-        else if (ctrl) mod = 5;
-        else if (alt && shift) mod = 4;
-        else if (alt) mod = 3;
-        else if (shift) mod = 2;
-
-        const navMap = { ArrowUp: 'A', ArrowDown: 'B', ArrowRight: 'C', ArrowLeft: 'D', Home: 'H', End: 'F' };
-        const tildeMap = { Insert: '2', Delete: '3', PageUp: '5', PageDown: '6' };
-
-        const dir = navMap[key];
-        if (dir) {
-            if (mod === 1) {
-                const isAppCursor = key.startsWith('Arrow') && this.modes.applicationCursorKeys;
-                this._send(isAppCursor ? '\x1BO' + dir : '\x1B[' + dir);
-            } else {
-                this._send(`\x1B[1;${mod}${dir}`);
-            }
-            e.preventDefault(); return;
-        }
-
-        const tilde = tildeMap[key];
-        if (tilde) {
-            this._send(mod === 1 ? `\x1B[${tilde}~` : `\x1B[${tilde};${mod}~`);
-            e.preventDefault(); return;
-        }
+        if (this._handleFunctionKeys(e, key, ctrl, shift, alt)) return;
 
         if (key && key.length === 1 && !ctrl && !alt && !e.metaKey) {
             if (document.activeElement !== this.textarea) {
@@ -258,6 +205,85 @@ export class Terminal {
             this.screen.markAllDirty();
             e.preventDefault(); return;
         }
+    }
+
+    _handleCopyPaste(e, key, ctrl, shift) {
+        if ((ctrl && key === 'Insert') || (ctrl && shift && key.toLowerCase() === 'c')) {
+            e.preventDefault();
+            const sel = document.getSelection().toString();
+            if (!sel) return true;
+            if (navigator.clipboard) {
+                navigator.clipboard.writeText(sel).catch(() => {});
+            } else {
+                const ta = document.createElement('textarea');
+                ta.value = sel;
+                ta.style.position = 'fixed';
+                ta.style.opacity = '0';
+                document.body.appendChild(ta);
+                ta.select();
+                document.execCommand('copy');
+                document.body.removeChild(ta);
+            }
+            return true;
+        }
+        if ((shift && key === 'Insert') || (ctrl && shift && key.toLowerCase() === 'v')) {
+            if (navigator.clipboard) {
+                e.preventDefault();
+                navigator.clipboard.readText().then(text => { if (text) this._send(text); }).catch(() => {});
+            }
+            return true;
+        }
+        return false;
+    }
+
+    _handleCtrlLetter(e, key, ctrl, shift) {
+        if (!ctrl || shift) return false;
+        const map = {
+            c: '\x03', z: '\x1A', d: '\x04', a: '\x01', e: '\x05',
+            l: '\x0C', u: '\x15', k: '\x0B', w: '\x17', r: '\x12',
+            h: '\x08', t: '\x14', y: '\x19', n: '\x0E', f: '\x06',
+            b: '\x02', o: '\x0F', x: '\x18',
+        };
+        const code = map[key];
+        if (code) {
+            this._send(code);
+            e.preventDefault();
+            return true;
+        }
+        return false;
+    }
+
+    _handleFunctionKeys(e, key, ctrl, shift, alt) {
+        let mod = 1;
+        if (ctrl && shift && alt) mod = 8;
+        else if (ctrl && alt) mod = 7;
+        else if (ctrl && shift) mod = 6;
+        else if (ctrl) mod = 5;
+        else if (alt && shift) mod = 4;
+        else if (alt) mod = 3;
+        else if (shift) mod = 2;
+
+        const navMap = { ArrowUp: 'A', ArrowDown: 'B', ArrowRight: 'C', ArrowLeft: 'D', Home: 'H', End: 'F' };
+        const tildeMap = { Insert: '2', Delete: '3', PageUp: '5', PageDown: '6' };
+
+        const dir = navMap[key];
+        if (dir) {
+            if (mod === 1) {
+                const isAppCursor = key.startsWith('Arrow') && this.modes.applicationCursorKeys;
+                this._send(isAppCursor ? '\x1BO' + dir : '\x1B[' + dir);
+            } else {
+                this._send(`\x1B[1;${mod}${dir}`);
+            }
+            e.preventDefault(); return true;
+        }
+
+        const tilde = tildeMap[key];
+        if (tilde) {
+            this._send(mod === 1 ? `\x1B[${tilde}~` : `\x1B[${tilde};${mod}~`);
+            e.preventDefault(); return true;
+        }
+
+        return false;
     }
 
     _onBeforeInput(e) {
@@ -302,11 +328,12 @@ export class Terminal {
     }
 
     _initResizeListener() {
-        let timer;
-        window.addEventListener('resize', () => {
-            clearTimeout(timer);
-            timer = setTimeout(() => this.renderer.fitToViewport(), 80);
-        });
+        this._resizeRafId = null;
+        this._resizeHandler = () => {
+            cancelAnimationFrame(this._resizeRafId);
+            this._resizeRafId = requestAnimationFrame(() => this.renderer.fitToViewport());
+        };
+        window.addEventListener('resize', this._resizeHandler);
     }
 
     _onWheel(e) {

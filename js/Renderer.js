@@ -23,6 +23,15 @@ export class Renderer {
         this.cursorEl = null;
 
         this._initDOM();
+        this._initScrollIndicator();
+    }
+
+    _initScrollIndicator() {
+        this._scrollIndicatorEl = document.createElement('div');
+        this._scrollIndicatorEl.className = 'scroll-indicator';
+        this._scrollIndicatorEl.textContent = ' (MORE)';
+        this._scrollIndicatorEl.style.cssText = 'position:absolute;bottom:4px;right:4px;font-size:12px;color:#888;display:none;pointer-events:none;z-index:1000;background:#000;padding:0 4px;';
+        this.container.appendChild(this._scrollIndicatorEl);
     }
 
     _initDOM() {
@@ -75,6 +84,13 @@ export class Renderer {
     _render() {
         this._renderRows();
         this._renderCursor();
+        this._updateScrollIndicator();
+    }
+
+    _updateScrollIndicator() {
+        const el = this._scrollIndicatorEl;
+        if (!el) return;
+        el.style.display = this.screen.viewOffset > 0 ? 'block' : 'none';
     }
 
     _renderRows() {

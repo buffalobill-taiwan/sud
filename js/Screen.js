@@ -53,6 +53,8 @@ export const XTERM_COLORS = [
     '#bcbcbc', '#c6c6c6', '#d0d0d0', '#dadada', '#e4e4e4', '#eeeeee',
 ];
 
+import { defaultAttr, applySGR, makeCell } from './sgr.js';
+
 export class Screen {
     constructor(cols, rows) {
         this.cols = cols;
@@ -71,7 +73,7 @@ export class Screen {
         this.scrollTop = 0;
         this.scrollBottom = this.rows - 1;
 
-        this.attr = this._defaultAttr();
+        this.attr = defaultAttr();
 
         this.modes = {
             applicationCursorKeys: false,
@@ -320,58 +322,17 @@ export class Screen {
 
     setSGR(params) {
         if (params.length === 0) params = [0];
-
-        for (let i = 0; i < params.length; i++) {
+        let i = 0;
+        while (i < params.length) {
             const p = params[i];
-            if (p === 0) {
-                this.attr = this._defaultAttr();
-            } else if (p === 1) {
-                this.attr.bold = true;
-            } else if (p === 2) {
-                this.attr.dim = true;
-            } else if (p === 3) {
-                this.attr.italic = true;
-            } else if (p === 4) {
-                this.attr.underline = true;
-            } else if (p === 5 || p === 6) {
-                this.attr.blink = true;
-            } else if (p === 7) {
-                this.attr.inverse = true;
-            } else if (p === 8) {
-                this.attr.conceal = true;
-            } else if (p === 9) {
-                this.attr.crossedOut = true;
-            } else if (p === 21 || p === 22) {
-                this.attr.bold = false; this.attr.dim = false;
-            } else if (p === 23) {
-                this.attr.italic = false;
-            } else if (p === 24) {
-                this.attr.underline = false;
-            } else if (p === 25) {
-                this.attr.blink = false;
-            } else if (p === 27) {
-                this.attr.inverse = false;
-            } else if (p === 28) {
-                this.attr.conceal = false;
-            } else if (p === 29) {
-                this.attr.crossedOut = false;
-            } else if (p >= 30 && p <= 37) {
-                this.attr.fg = p - 30;
-            } else if (p === 38) {
+            if (p === 38) {
                 i = this._parseExtendedColor(params, i, 'fg');
-            } else if (p === 39) {
-                this.attr.fg = 7;
-            } else if (p >= 40 && p <= 47) {
-                this.attr.bg = p - 40;
             } else if (p === 48) {
                 i = this._parseExtendedColor(params, i, 'bg');
-            } else if (p === 49) {
-                this.attr.bg = 0;
-            } else if (p >= 90 && p <= 97) {
-                this.attr.fg = p - 90 + 8;
-            } else if (p >= 100 && p <= 107) {
-                this.attr.bg = p - 100 + 8;
+            } else {
+                applySGR(this.attr, [p]);
             }
+            i++;
         }
     }
 
@@ -386,30 +347,12 @@ export class Screen {
         this.viewOffset = 0;
         this.curX = 0;
         this.curY = 0;
-        this.attr = this._defaultAttr();
+        this.attr = defaultAttr();
         this.markAllDirty();
     }
 
-    _defaultAttr() {
-        return { fg: 7, bg: 0, bold: false, dim: false, italic: false, underline: false, blink: false, inverse: false, conceal: false, crossedOut: false };
-    }
-
     _makeCell(ch) {
-        const w = this.isWide(ch) ? 2 : 1;
-        return {
-            ch: ch || ' ',
-            fg: this.attr.fg,
-            bg: this.attr.bg,
-            bold: this.attr.bold,
-            dim: this.attr.dim,
-            italic: this.attr.italic,
-            underline: this.attr.underline,
-            blink: this.attr.blink,
-            inverse: this.attr.inverse,
-            conceal: this.attr.conceal,
-            crossedOut: this.attr.crossedOut,
-            width: w,
-        };
+        return makeCell(ch, this.attr, this.isWide(ch) ? 2 : 1);
     }
 
     _emptyRow() {

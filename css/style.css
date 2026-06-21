@@ -672,3 +672,9 @@ html, body {
 .i { font-style: italic; }
 .u { text-decoration: underline; }
 .s { text-decoration: line-through; }
+.scroll-indicator {
+    color: #666;
+    background: #000;
+    padding: 0 4px;
+    font-size: 12px;
+}

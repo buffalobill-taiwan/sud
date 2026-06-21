@@ -88,6 +88,9 @@ export class DemoShell {
     }
 
     readLine(callback) {
+        if (this._readLinePending) {
+            if (typeof console !== 'undefined') console.warn('readLine called while another readLine is pending — overwriting');
+        }
         this._readLinePending = callback;
         this._readLineBuffer = '';
     }
@@ -364,7 +367,7 @@ export class ShellWidgetManager {
 
     add(widget) {
         const n = this._widgets.length;
-        widget._y = n;
+        widget.setPosition(widget._x, n);
         widget.start();
         this._widgets.push(widget);
     }
@@ -376,8 +379,7 @@ export class ShellWidgetManager {
         this._widgets.splice(i, 1);
         for (let j = 0; j < this._widgets.length; j++) {
             const w = this._widgets[j];
-            w._y = j;
-            if (w._overlay) w._overlay.y = j;
+            w.setPosition(w._x, j);
         }
         this.redrawAll();
     }

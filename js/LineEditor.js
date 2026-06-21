@@ -156,6 +156,6 @@ export class LineEditor {
     }
 
     get _promptText() {
-        return '$ ';
+        return this._prompt;
     }
 }

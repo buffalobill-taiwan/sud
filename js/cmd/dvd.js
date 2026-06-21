@@ -4,7 +4,7 @@ import { DVDWidget } from './widgets/DVDWidget.js';
 export class DvdCmd extends CmdBase {
     execute(args) {
         if (this._dvd) {
-            this.shell._savedPositions['dvd-widget'] = { x: this._dvd._x, y: this._dvd._y };
+            this.shell._savedPositions['dvd-widget'] = this._dvd.getPosition();
             this._dvd.stop();
             this._dvd = null;
             this.shell.print('DVD stopped\n');
@@ -13,8 +13,7 @@ export class DvdCmd extends CmdBase {
         this._dvd = new DVDWidget(this.shell);
         const saved = this.shell._savedPositions['dvd-widget'];
         if (saved) {
-            this._dvd._x = saved.x;
-            this._dvd._y = saved.y;
+            this._dvd.setPosition(saved.x, saved.y);
         }
         this._dvd.start();
         this.shell.print('DVD started\n');

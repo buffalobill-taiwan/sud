@@ -14,8 +14,7 @@ export class DVDWidget extends WidgetBase {
         this._h = 3;
         const cols = shell.term.cols;
         const rows = shell.term.rows;
-        this._x = Math.floor((cols - this._w) / 2);
-        this._y = Math.floor((rows - this._h) / 2);
+        this.setPosition(Math.floor((cols - this._w) / 2), Math.floor((rows - this._h) / 2));
         this._dx = 1;
         this._dy = 1;
         this._color = 1;
@@ -53,7 +52,7 @@ export class DVDWidget extends WidgetBase {
 
     _clear() {
         for (let r = this._y; r < this._y + this._h; r++) {
-            this.term.markRowDirty(r);
+            if (r >= 0 && r < this.term.rows) this.term.markRowDirty(r);
         }
     }
 
@@ -80,15 +79,11 @@ export class DVDWidget extends WidgetBase {
             this._color = COLORS[Math.floor(Math.random() * COLORS.length)];
         }
 
-        this._x = nx;
-        this._y = ny;
+        this.setPosition(nx, ny);
 
         for (let r = oldY; r < oldY + this._h; r++) {
             if (r >= 0 && r < this.term.rows) this.term.markRowDirty(r);
         }
-
-        this._overlay.y = this._y;
-        this._overlay.x = this._x;
 
         this.draw();
     }
