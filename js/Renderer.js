@@ -239,20 +239,8 @@ export class Renderer {
             return;
         }
 
-        let cell = null;
-        const cy = screen.curY;
-        const cx = screen.curX;
-        for (const ov of screen.overlays) {
-            if (cy >= ov.y && cy < ov.y + ov.h && cx >= ov.x && cx < ov.x + ov.w) {
-                const oc = ov.getCell(cy - ov.y, cx - ov.x);
-                if (oc) { cell = oc; break; }
-            }
-        }
-        if (!cell) {
-            const row = screen.buffer[cy];
-            if (!row) { this.cursorEl.className = 'hidden'; return; }
-            cell = row[cx];
-        }
+        const cell = screen.getCellAt(screen.curX, screen.curY);
+        if (!cell) { this.cursorEl.className = 'hidden'; return; }
         let fg = cell.fg;
         let bg = cell.bg;
         if (cell.inverse) { const t = fg; fg = bg; bg = t; }

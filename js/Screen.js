@@ -72,6 +72,18 @@ export class Screen {
         if (i >= 0) this.overlays.splice(i, 1);
     }
 
+    getCellAt(col, row) {
+        if (col < 0 || col >= this.cols || row < 0 || row >= this.rows) return null;
+        for (const ov of this.overlays) {
+            if (row >= ov.y && row < ov.y + ov.h && col >= ov.x && col < ov.x + ov.w) {
+                const c = ov.getCell(row - ov.y, col - ov.x);
+                if (c) return c;
+            }
+        }
+        const r = this.buffer[row];
+        return r ? r[col] : null;
+    }
+
     isWide(ch) {
         const code = ch.charCodeAt ? ch.charCodeAt(0) : ch;
 
