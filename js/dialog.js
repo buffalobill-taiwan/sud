@@ -143,11 +143,12 @@ export class Dialog {
         this.title = opts.title || '';
         this.footer = opts.footer || '';
         this.closed = false;
-        this.x = 0;
-        this.y = 0;
+        this.x = opts.x != null ? opts.x : 0;
+        this.y = opts.y != null ? opts.y : 0;
         this.h = 0;
         this._buffer = null;
         this._overlay = null;
+        this._savePos = opts.savePos || null;
     }
 
     open() {
@@ -158,6 +159,7 @@ export class Dialog {
             h: this.h,
             w: this.width,
             z: 100,
+            owner: this,
             getCell: (relRow, relCol) => {
                 if (this._buffer && relRow < this.h && relCol < this.width) {
                     return this._buffer[relRow][relCol];
@@ -181,6 +183,7 @@ export class Dialog {
     close() {
         if (this.closed) return;
         this.closed = true;
+        if (this._savePos) this._savePos(this.x, this.y);
         this._markDirty();
         if (this.stack) {
             this.stack.pop();
@@ -203,6 +206,28 @@ export class Dialog {
         this._renderContent();
         this._markDirty();
     }
+
+    startDrag(col, row) {
+        this._dragOffX = col - this.x;
+        this._dragOffY = row - this.y;
+    }
+
+    moveDrag(col, row) {
+        const cols = this.term.cols;
+        const rows = this.term.rows;
+        const newX = Math.max(0, Math.min(cols - this.width, col - this._dragOffX));
+        const newY = Math.max(0, Math.min(rows - this.h, row - this._dragOffY));
+        if (newX !== this.x || newY !== this.y) {
+            this._markDirty();
+            this.x = newX;
+            this.y = newY;
+            this._overlay.x = newX;
+            this._overlay.y = newY;
+            this._markDirty();
+        }
+    }
+
+    endDrag() {}
 
     _markDirty() {
         for (let r = 0; r < this.h; r++) {
@@ -293,8 +318,8 @@ export class MenuDialog extends Dialog {
 
         super(term, { ...opts, width });
 
-        this.x = x;
-        this.y = Math.max(0, y - 1);
+        this.x = opts.x != null ? opts.x : x;
+        this.y = opts.y != null ? opts.y : Math.max(0, y - 1);
         this.h = h;
         this.items = items;
         this.visibleCount = visibleCount;
@@ -420,8 +445,8 @@ export class InputDialog extends Dialog {
 
         super(term, { ...opts, width });
 
-        this.x = x;
-        this.y = Math.max(0, y - 1);
+        this.x = opts.x != null ? opts.x : x;
+        this.y = opts.y != null ? opts.y : Math.max(0, y - 1);
         this.h = h;
         this.prompt = opts.prompt || '';
         this.inputText = '';
@@ -479,32 +504,6 @@ export class InputDialog extends Dialog {
     }
 }
 
-// ── ClockDialog ──
-
-export class ClockDialog extends Dialog {
-    constructor(term, opts) {
-        super(term, Object.assign({ width: 22, footer: 'ESC/Enter to exit', title: null }, opts));
-        this.h = 6;
-        this.x = Math.floor((term.cols - this.width) / 2);
-        this.y = Math.floor((term.rows - this.h) / 2);
-        this._onExit = opts.onExit || null;
-    }
-
-    _renderContent() {
-        _writeStr(this._buffer, 1, 0, '\u2502' + ' '.repeat(this.width - 2) + '\u2502', this.width);
-        this._centerRow(2, '\x1B[7m  EXIT  \x1B[0m');
-    }
-
-    _onKey(data) {
-        if (data.length !== 1) return;
-        const code = data.charCodeAt(0);
-        if (code === 0x1B || code === 0x03 || code === 0x0D || code === 0x0A) {
-            if (this._onExit) this._onExit();
-            return 'close';
-        }
-    }
-}
-
 // ── ShowDialog ──
 
 export class ShowDialog extends Dialog {
@@ -514,8 +513,8 @@ export class ShowDialog extends Dialog {
         this._lines = this.message.split('\n');
         const h = Math.max(4, this._lines.length + 4);
         this.h = h;
-        this.x = Math.floor((term.cols - this.width) / 2);
-        this.y = Math.floor((term.rows - h) / 2);
+        this.x = opts.x != null ? opts.x : Math.floor((term.cols - this.width) / 2);
+        this.y = opts.y != null ? opts.y : Math.floor((term.rows - h) / 2);
         this._onExit = opts.onExit || null;
     }
 

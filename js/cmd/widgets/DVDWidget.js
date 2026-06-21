@@ -37,6 +37,20 @@ export class DVDWidget extends WidgetBase {
         super.stop();
     }
 
+    startDrag(col, row) {
+        if (this._intervalId) {
+            clearInterval(this._intervalId);
+            this._intervalId = null;
+        }
+        super.startDrag(col, row);
+    }
+
+    endDrag() {
+        if (!this._intervalId) {
+            this._intervalId = setInterval(() => this._tick(), 120);
+        }
+    }
+
     _clear() {
         for (let r = this._y; r < this._y + this._h; r++) {
             this.term.markRowDirty(r);

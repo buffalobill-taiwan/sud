@@ -1,17 +1,16 @@
 /**
  * DemoShell — line-editing shell with history, tab completion,
- * command dispatch, dialog integration, and clock mode.
+ * command dispatch, and dialog integration.
  *
  * ShellWidgetManager — manages TSR widget lifecycle with scroll region.
  */
 
-import { StateStack, MenuDialog, InputDialog, ClockDialog, ShowDialog } from './dialog.js';
+import { StateStack, MenuDialog, InputDialog, ShowDialog } from './dialog.js';
 import { Typewriter } from './typewriter.js';
 import { LineEditor } from './LineEditor.js';
 import {
     Help, Clear, Echo, DateCmd, Uname, Neofetch, Cowsay, Ascii,
-    Fortune, Calc, Exit, Whoami, MenuCmd, ClockCmd, WidgetCmd, Quiz,
-    DvdCmd, ClockWidget,
+    Fortune, Calc, Exit, Whoami, MenuCmd, ClockCmd, Quiz, DvdCmd,
 } from './cmd/index.js';
 
 export class DemoShell {
@@ -28,7 +27,6 @@ export class DemoShell {
         this.menuItems = [];
         this.cmdList = [];
 
-        this._clockCleanup = null;
         this.typewriter = new Typewriter(this.term);
         this._pendingPrompt = false;
         this.typewriter.onDrain(() => {
@@ -40,7 +38,7 @@ export class DemoShell {
         this.editor = new LineEditor(this.term, {
             onExecute: (line) => {
                 this.execute(line);
-                if (!this.activeDialog && !this._clockCleanup && !this._readLinePending) this._checkTypewriterDrain();
+                if (!this.activeDialog && !this._readLinePending) this._checkTypewriterDrain();
             },
             onShowPrompt: () => this._checkTypewriterDrain(),
         });
@@ -50,6 +48,8 @@ export class DemoShell {
         this._registerCommands();
 
         this.editor.setCommands(Object.keys(this.commands));
+        this._dragTarget = null;
+        this._savedPositions = {};
 
         this.start();
     }
@@ -57,7 +57,7 @@ export class DemoShell {
     _registerCommands() {
         const classes = [
             Ascii, Calc, Clear, ClockCmd, Cowsay, DateCmd, DvdCmd, Echo,
-            Exit, Fortune, Help, MenuCmd, Neofetch, Quiz, Uname, Whoami, WidgetCmd,
+            Exit, Fortune, Help, MenuCmd, Neofetch, Quiz, Uname, Whoami,
         ];
         for (const Cls of classes) {
             const cmd = new Cls(this);
@@ -95,19 +95,6 @@ export class DemoShell {
     handleInput(data) {
         if (!this.running) return;
 
-        if (this._clockCleanup) {
-            for (let i = 0; i < data.length; i++) {
-                const code = data.charCodeAt ? data.charCodeAt(i) : data[i];
-                if (code === 0x1B || code === 0x03) {
-                    const fn = this._clockCleanup;
-                    this._clockCleanup = null;
-                    fn();
-                    return;
-                }
-            }
-            return;
-        }
-
         if (this.typewriter.isActive()) {
             for (let i = 0; i < data.length; i++) {
                 const ch = data[i];
@@ -134,9 +121,13 @@ export class DemoShell {
                 const a = this._pendingAction;
                 this._pendingAction = null;
                 if (a.type === 'show-calc-result') {
+                    const pos = this._savedPositions['show'] || {};
                     const showDlg = new ShowDialog(this.term, {
                         message: a.message,
                         stack: this.stateStack,
+                        x: pos.x,
+                        y: pos.y,
+                        savePos: (x, y) => { this._savedPositions['show'] = { x, y }; },
                         onExit: () => { this.activeDialog = this.menuDialog; },
                     });
                     this.activeDialog = showDlg;
@@ -194,6 +185,39 @@ export class DemoShell {
         this.editor.handleKey(data);
     }
 
+    handleMouse(type, info) {
+        if (type === 'mousedown') {
+            const ovs = this.term.overlays;
+            for (let i = ovs.length - 1; i >= 0; i--) {
+                const ov = ovs[i];
+                if (info.col >= ov.x && info.col < ov.x + ov.w &&
+                    info.row >= ov.y && info.row < ov.y + ov.h) {
+                    const owner = ov.owner;
+                    if (owner && typeof owner.startDrag === 'function') {
+                        this._dragTarget = owner;
+                        owner.startDrag(info.col, info.row);
+                        return true;
+                    }
+                    break;
+                }
+            }
+            return false;
+        }
+
+        if (type === 'mousemove' && this._dragTarget) {
+            this._dragTarget.moveDrag(info.col, info.row);
+            return true;
+        }
+
+        if (type === 'mouseup' && this._dragTarget) {
+            this._dragTarget.endDrag();
+            this._dragTarget = null;
+            return true;
+        }
+
+        return false;
+    }
+
     execute(line) {
         const trimmed = line.trim();
         if (trimmed.length === 0) return;
@@ -226,11 +250,15 @@ export class DemoShell {
     }
 
     _openCalcDialog(menuDlg) {
+        const pos = this._savedPositions['calc'] || {};
         const inputDlg = new InputDialog(this.term, {
             title: '\u8ACB\u8F38\u5165\u7B97\u5F0F',
             prompt: '\u7B97\u5F0F\uFF1A',
             footer: 'Enter Confirm  ESC Back',
             stack: this.stateStack,
+            x: pos.x,
+            y: pos.y,
+            savePos: (x, y) => { this._savedPositions['calc'] = { x, y }; },
             onConfirm: (expr) => {
                 if (!expr.trim()) {
                     this.activeDialog = menuDlg;
@@ -261,11 +289,15 @@ export class DemoShell {
         if (op === '-' && a < b) b = [a, a = b][0];
         const answer = op === '+' ? a + b : op === '-' ? a - b : a * b;
 
+        const pos = this._savedPositions['quiz'] || {};
         const inputDlg = new InputDialog(this.term, {
             title: 'Quiz',
             prompt: `${a} ${op} ${b} = ?`,
             footer: 'Enter Answer  ESC Back',
             stack: this.stateStack,
+            x: pos.x,
+            y: pos.y,
+            savePos: (x, y) => { this._savedPositions['quiz'] = { x, y }; },
             onConfirm: (expr) => {
                 if (!expr.trim()) {
                     if (menuDlg) this.activeDialog = menuDlg;
@@ -288,31 +320,17 @@ export class DemoShell {
         inputDlg.open();
     }
 
-    _openClockDialog() {
-        const clockDlg = new ClockDialog(this.term, {
-            onExit: () => {
-                if (this._clockWidget) {
-                    this._clockWidget.stop();
-                    this._clockWidget = null;
-                }
-                this.activeDialog = this.menuDialog;
-            }
-        });
-        this._clockWidget = new ClockWidget(this, { bg: 0 });
-        this._clockWidget._y = clockDlg.y + 1;
-        this._clockWidget._x = clockDlg.x + 1 + Math.floor((clockDlg.width - 2 - 8) / 2);
-        this.activeDialog = clockDlg;
-        clockDlg.open();
-        this._clockWidget.start();
-    }
-
     menuCmd() {
+        const pos = this._savedPositions['menu'] || {};
         const menuDlg = new MenuDialog(this.term, this.menuItems, {
             width: 44,
             title: 'Command Menu',
             footer: '\u2191\u2193 Navigate  \u21A9 Execute  ESC Quit',
             visibleCount: 5,
             stack: this.stateStack,
+            x: pos.x,
+            y: pos.y,
+            savePos: (x, y) => { this._savedPositions['menu'] = { x, y }; },
             onSelect: (item) => {
                 if (item.name === 'calc') {
                     this._openCalcDialog(menuDlg);
@@ -320,10 +338,6 @@ export class DemoShell {
                 }
                 if (item.name === 'quiz') {
                     this._openQuizDialog(menuDlg);
-                    return;
-                }
-                if (item.name === 'clock') {
-                    this._openClockDialog();
                     return;
                 }
                 this._pendingAction = { type: 'exec', cmd: item.name, args: [] };

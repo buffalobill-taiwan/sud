@@ -28,6 +28,7 @@ export class Terminal {
 
         this.textarea = document.getElementById('hidden-input');
         this._isComposing = false;
+        this.onMouse = null;
         this.mouseBtn = 0;
         this.mouseX = 0;
         this.mouseY = 0;
@@ -315,58 +316,78 @@ export class Terminal {
 
     _onMouseDown(e) {
         this._focusInput();
+
+        const info = this._mouseInfo(e);
+        if (info.col < 0 || info.col >= this.cols || info.row < 0 || info.row >= this.rows) return;
+
+        if (this.onMouse && this.onMouse('mousedown', info)) {
+            e.preventDefault();
+            this.mouseBtn = info.btn;
+            this.mouseX = info.col;
+            this.mouseY = info.row;
+            return;
+        }
+
         if (!this.onData || this.mouseMode === 0) return;
         e.preventDefault();
 
-        const rect = this.container.getBoundingClientRect();
-        const x = e.clientX - rect.left;
-        const y = e.clientY - rect.top;
-        const col = Math.floor(x / this.renderer.charWidth);
-        const row = Math.floor(y / this.renderer.charHeight);
-        if (col < 0 || col >= this.cols || row < 0 || row >= this.rows) return;
-
-        let btn = 0;
-        if (e.button === 0) btn = 0;
-        else if (e.button === 1) btn = 1;
-        else if (e.button === 2) btn = 2;
-
-        if (e.shiftKey) btn += 4;
-        if (e.altKey) btn += 8;
-        if (e.ctrlKey) btn += 16;
-
-        this.mouseBtn = btn;
-        this.mouseX = col;
-        this.mouseY = row;
+        this.mouseBtn = info.btn;
+        this.mouseX = info.col;
+        this.mouseY = info.row;
 
         if (this.mouseMode === 9 || this.mouseMode === 1000 || this.mouseMode === 1002 || this.mouseMode === 1003) {
-            this._sendMouseEvent('M', btn, col + 1, row + 1);
+            this._sendMouseEvent('M', info.btn, info.col + 1, info.row + 1);
         }
     }
 
     _onMouseUp(e) {
+        const info = this._mouseInfo(e);
+
+        if (this.onMouse && this.onMouse('mouseup', info)) {
+            e.preventDefault();
+            return;
+        }
+
         if (!this.onData || this.mouseMode === 0) return;
         if (this.mouseMode === 1000 || this.mouseMode === 1002 || this.mouseMode === 1003) {
-            const rect = this.container.getBoundingClientRect();
-            const x = e.clientX - rect.left;
-            const y = e.clientY - rect.top;
-            const col = Math.floor(x / this.renderer.charWidth);
-            const row = Math.floor(y / this.renderer.charHeight);
-            if (col < 0 || col >= this.cols || row < 0 || row >= this.rows) return;
+            if (info.col < 0 || info.col >= this.cols || info.row < 0 || info.row >= this.rows) return;
             if (this.mouseMode === 9) return;
-            this._sendMouseEvent('m', this.mouseBtn, col + 1, row + 1);
+            this._sendMouseEvent('m', this.mouseBtn, info.col + 1, info.row + 1);
         }
         this.mouseBtn = 0;
     }
 
     _onMouseMove(e) {
+        const info = this._mouseInfo(e);
+
+        if (this.onMouse && this.onMouse('mousemove', info)) {
+            return;
+        }
+
         if (!this.onData || this.mouseMode !== 1003) return;
+        if (info.col < 0 || info.col >= this.cols || info.row < 0 || info.row >= this.rows) return;
+        this._sendMouseEvent('M', this.mouseBtn, info.col + 1, info.row + 1);
+    }
+
+    _mouseInfo(e) {
         const rect = this.container.getBoundingClientRect();
         const x = e.clientX - rect.left;
         const y = e.clientY - rect.top;
-        const col = Math.floor(x / this.renderer.charWidth);
-        const row = Math.floor(y / this.renderer.charHeight);
-        if (col < 0 || col >= this.cols || row < 0 || row >= this.rows) return;
-        this._sendMouseEvent('M', this.mouseBtn, col + 1, row + 1);
+        let btn = 0;
+        if (e.button === 0) btn = 0;
+        else if (e.button === 1) btn = 1;
+        else if (e.button === 2) btn = 2;
+        if (e.shiftKey) btn += 4;
+        if (e.altKey) btn += 8;
+        if (e.ctrlKey) btn += 16;
+        return {
+            btn,
+            col: Math.floor(x / this.renderer.charWidth),
+            row: Math.floor(y / this.renderer.charHeight),
+            shiftKey: e.shiftKey,
+            altKey: e.altKey,
+            ctrlKey: e.ctrlKey,
+        };
     }
 
     _sendMouseEvent(prefix, btn, col, row) {

@@ -3,24 +3,15 @@ import { ClockWidget } from './widgets/ClockWidget.js';
 
 export class ClockCmd extends CmdBase {
     execute(args) {
-        const term = this.term;
-        term.write('\x1B[?25l');
-
-        const widget = new ClockWidget(this.shell, { bg: 0 });
-        widget._y = Math.min(term.curY, term.rows - 1);
-        widget._x = 0;
-        widget.start();
-        widget.draw();
-
-        this.shell._clockCleanup = () => {
-            for (let r = 0; r < widget._h; r++)
-                term.markRowDirty(widget._y + r);
-            widget.stop();
-            term.write('\r\n\x1B[?25h');
-            this.shell.showPrompt();
-        };
+        if (this._clock) {
+            this.shell.widgetManager.remove(this._clock);
+            this._clock = null;
+            return;
+        }
+        this._clock = new ClockWidget(this.shell);
+        this.shell.widgetManager.add(this._clock);
     }
     static get commandName() { return 'clock'; }
-    static get help() { return 'Show live clock (ESC to exit)'; }
-    static get menu() { return 'Live clock'; }
+    static get help() { return 'Toggle TSR clock widget'; }
+    static get menu() { return 'TSR clock (top-right)'; }
 }
