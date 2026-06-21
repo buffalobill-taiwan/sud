@@ -1,9 +1,10 @@
 import { CmdBase } from './CmdBase.js';
+import { bold, cyan, blue } from '../sgr.js';
 
 export class Neofetch extends CmdBase {
     execute(args) {
-        this.print('\x1B[1;36m  OpenCodeTerm\x1B[0m\n');
-        this.print('\x1B[1;34m  -----------\x1B[0m\n');
+        this.print(bold(cyan('  OpenCodeTerm')) + '\n');
+        this.print(bold(blue('  -----------')) + '\n');
         this.print('  OS:     HTML5 + CSS3 + ES2024\n');
         this.print('  Host:   Web Browser\n');
         this.print('  Font:   Unifont 8x16\n');

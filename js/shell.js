@@ -8,10 +8,8 @@
 import { StateStack, MenuDialog, InputDialog, ShowDialog } from './dialog.js';
 import { Typewriter } from './typewriter.js';
 import { LineEditor } from './LineEditor.js';
-import {
-    Help, Clear, Echo, DateCmd, Uname, Neofetch, Cowsay, Ascii,
-    Fortune, Calc, Exit, Whoami, MenuCmd, ClockCmd, Quiz, DvdCmd,
-} from './cmd/index.js';
+import * as cmdModule from './cmd/index.js';
+import { bold, green, yellow, gray, red, white } from './sgr.js';
 
 export class DemoShell {
     constructor(term) {
@@ -56,11 +54,8 @@ export class DemoShell {
     }
 
     _registerCommands() {
-        const classes = [
-            Ascii, Calc, Clear, ClockCmd, Cowsay, DateCmd, DvdCmd, Echo,
-            Exit, Fortune, Help, MenuCmd, Neofetch, Quiz, Uname, Whoami,
-        ];
-        for (const Cls of classes) {
+        for (const Cls of Object.values(cmdModule)) {
+            if (typeof Cls !== 'function' || !Cls.commandName) continue;
             const cmd = new Cls(this);
             const name = Cls.commandName;
             const help = Cls.help;
@@ -76,9 +71,9 @@ export class DemoShell {
     start() {
         this.running = true;
         this.term.write('\x1B[2J\x1B[H');
-        this.term.write('\x1B[1;32mOpenCode Terminal v1.0.0\x1B[0m\n');
-        this.term.write('Type \x1B[33mhelp\x1B[0m for available commands.\n\n');
-        this.term.write('\x1B[90mAEIOUÀÈÌÒÙ金木水火土鑫森淼焱垚あいうえおアイウエオ\x1B[0m\n\n');
+        this.term.write(bold(green('OpenCode Terminal v1.0.0')) + '\n');
+        this.term.write('Type ' + yellow('help') + ' for available commands.\n\n');
+        this.term.write(gray('AEIOUÀÈÌÒÙ金木水火土鑫森淼焱垚あいうえおアイウエオ') + '\n\n');
         this.showPrompt();
     }
 
@@ -251,8 +246,8 @@ export class DemoShell {
         if (handler) {
             handler(args);
         } else {
-            this.print('\x1B[91mCommand not found: ' + cmd + '\x1B[0m\n');
-            this.print('Try \x1B[33mhelp\x1B[0m.\n');
+            this.print(red('Command not found: ' + cmd) + '\n');
+            this.print('Try ' + yellow('help') + '.\n');
         }
     }
 
@@ -288,7 +283,7 @@ export class DemoShell {
                     const result = Function('"use strict"; return (' + expr + ')')();
                     msg = String(result);
                 } catch (e) {
-                    msg = '\x1B[91mError:\x1B[0m ' + e.message;
+                    msg = red('Error:') + ' ' + e.message;
                 }
                 this._pendingAction = { type: 'show-calc-result', message: msg };
             },
@@ -325,9 +320,9 @@ export class DemoShell {
                 const userAns = parseInt(expr.trim(), 10);
                 let msg;
                 if (userAns === answer) {
-                    msg = '\x1B[1;32m\u2713 Correct!\x1B[0m';
+                    msg = bold(green('\u2713 Correct!'));
                 } else {
-                    msg = `\x1B[1;31m\u2717 Wrong!\x1B[0m  Answer: \x1B[1;37m${answer}\x1B[0m`;
+                    msg = bold(red('\u2717 Wrong!')) + '  Answer: ' + bold(white('' + answer));
                 }
                 this._pendingAction = { type: 'show-calc-result', message: msg };
             },

@@ -43,6 +43,70 @@ export function applySGR(attr, params) {
     }
 }
 
+// ── SGR helper — convenient text styling ──
+// Usage:
+//   green`success\n`          tagged template
+//   green('success')          function call
+//   bold(red('error'))        chaining (double \x1B[0m, harmless)
+//   sgr(1, 31)`warning\n`     arbitrary params
+
+function _sgrWrap(params, text) {
+    return '\x1B[' + params.join(';') + 'm' + text + '\x1B[0m';
+}
+
+function _sgrStyle(params) {
+    function fn(arg, ...values) {
+        if (Array.isArray(arg)) {
+            let r = '';
+            for (let i = 0; i < arg.length; i++) {
+                r += arg[i];
+                if (i < values.length) r += values[i];
+            }
+            return _sgrWrap(params, r);
+        }
+        return _sgrWrap(params, arg);
+    }
+    return fn;
+}
+
+export const bold = _sgrStyle([1]);
+export const dim = _sgrStyle([2]);
+export const italic = _sgrStyle([3]);
+export const underline = _sgrStyle([4]);
+export const blink = _sgrStyle([5]);
+export const inverse = _sgrStyle([7]);
+export const conceal = _sgrStyle([8]);
+export const crossedOut = _sgrStyle([9]);
+
+export const black = _sgrStyle([30]);
+export const red = _sgrStyle([31]);
+export const green = _sgrStyle([32]);
+export const yellow = _sgrStyle([33]);
+export const blue = _sgrStyle([34]);
+export const magenta = _sgrStyle([35]);
+export const cyan = _sgrStyle([36]);
+export const white = _sgrStyle([37]);
+export const gray = _sgrStyle([90]);
+export const brightRed = _sgrStyle([91]);
+export const brightGreen = _sgrStyle([92]);
+export const brightYellow = _sgrStyle([93]);
+export const brightBlue = _sgrStyle([94]);
+export const brightMagenta = _sgrStyle([95]);
+export const brightCyan = _sgrStyle([96]);
+export const brightWhite = _sgrStyle([97]);
+
+export const bgBlack = _sgrStyle([40]);
+export const bgRed = _sgrStyle([41]);
+export const bgGreen = _sgrStyle([42]);
+export const bgYellow = _sgrStyle([43]);
+export const bgBlue = _sgrStyle([44]);
+export const bgMagenta = _sgrStyle([45]);
+export const bgCyan = _sgrStyle([46]);
+export const bgWhite = _sgrStyle([47]);
+
+export function sgr(...params) { return _sgrStyle(params); }
+export const reset = '\x1B[0m';
+
 export function makeCell(ch, attr, width) {
     return {
         ch: ch || ' ',
