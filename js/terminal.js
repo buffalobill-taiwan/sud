@@ -215,8 +215,7 @@ export class Terminal {
             } else {
                 const ta = document.createElement('textarea');
                 ta.value = sel;
-                ta.style.position = 'fixed';
-                ta.style.opacity = '0';
+                ta.className = 'clip-helper';
                 document.body.appendChild(ta);
                 ta.select();
                 document.execCommand('copy');

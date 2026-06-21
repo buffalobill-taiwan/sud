@@ -123,6 +123,11 @@ html, body {
     line-height: inherit;
 }
 
+.clip-helper {
+    position: fixed;
+    opacity: 0;
+}
+
 #scanlines {
     position: absolute;
     top: 0;
