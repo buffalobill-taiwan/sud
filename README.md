@@ -59,18 +59,19 @@ Open `index.html` in a modern browser, or visit the live demo:
 | `ascii` | Show ANSI color chart (16 color + 256 color cube) |
 | `calc` | Evaluate arithmetic expression |
 | `clear` | Clear screen |
-| `clock` | Live clock; ESC / Ctrl+C to exit; shell uses inline widget, menu uses dialog frame |
+| `clock` | Toggle TSR clock widget (replaces old `widget` command) |
 | `cowsay` | Let a cow speak |
 | `date` | Show current date/time |
+| `dvd` | Toggle bouncing DVD logo widget |
 | `echo` | Print arguments |
 | `exit` | Exit the demo shell |
 | `fortune` | Display a random fortune |
 | `help` | List available commands |
 | `menu` | Open command menu dialog |
 | `neofetch` | Display system info |
+| `quiz` | Math quiz challenge |
 | `uname` | Print system information |
 | `whoami` | Show user name |
-| `widget` | Toggle TSR clock widget (top-right corner) |
 
 **Ctrl+Shift++ / Ctrl+-** — Scroll back/forward through history.
 
