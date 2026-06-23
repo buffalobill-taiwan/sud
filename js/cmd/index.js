@@ -21,4 +21,5 @@ export { DVDWidget } from './widgets/DVDWidget.js';
 export { Blink } from './blink.js';
 export { SmallBlink } from './smallblink.js';
 export { MbtiCmd } from './mbti.js';
+export { AstrologyCmd } from './astrology.js';
 

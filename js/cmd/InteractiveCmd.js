@@ -90,6 +90,7 @@ export class InteractiveCmd extends CmdBase {
         this.isTyping = true;
         this.printThen(opts.text || '', () => {
             this.isTyping = false;
+            this.term.write('\x1B[?25l');
             opts.render(0, opts.options, this.term);
         });
     }
