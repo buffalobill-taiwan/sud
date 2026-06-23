@@ -1,7 +1,7 @@
-import { InteractiveCmd } from './InteractiveCmd.js';
+import { CmdBase } from './CmdBase.js';
 import { cyan, bold, yellow, white, red, magenta } from '../sgr.js';
 
-export class MbtiCmd extends InteractiveCmd {
+export class MbtiCmd extends CmdBase {
     constructor(shell) {
         super(shell);
         this.pools = {

@@ -267,11 +267,13 @@ unaddressed:
 - **MbtiCmd/AstrologyCmd simplified**: Both use default move/render from `select()`. MbtiCmd passes `[[aText, bText]]`, AstrologyCmd passes `3×4` grid. Custom render/move removed.
 - **AstrologyCmd registered**: 12-zodiac 4×3 grid selection via `select()`, seed-based fortune generation (mulberry32, dayOfYear + signIdx), 5 categories × 5 score levels × 3 descriptions.
 - **Removed neofetch, uname, whoami**: Three fileless commands removed — no filesystem dependency to justify them, and their output was trivial.
+- **InteractiveCmd merged into CmdBase**: All interactive methods (`select()`, `prompt()`, `open()/close()`, `handleKey()`) moved into `CmdBase`. `InteractiveCmd.js` deleted. `mbti.js`/`astrology.js` now import `CmdBase` directly.
 
 ### Removed
 - `saveArea()`, `restoreArea()`, `saveCursor()`, `restoreCursor()` — no longer needed
 - `ask()` — unused dead code, removed
 - `neofetch`, `uname`, `whoami` — three fileless commands removed
+- `InteractiveCmd.js` — merged into `CmdBase.js`
 - `WidgetBase._saveBacking()`, `_restoreBacking()`
 - `ShellWidgetManager._setScrollTop()`
 - `shell.clockMode()` — replaced by ClockWidget-based ClockCmd.execute()
@@ -291,8 +293,7 @@ unaddressed:
 
 ```
 js/cmd/
-├── CmdBase.js         # execute(args) | print(text) | readLine(cb) | static commandName/help/menu
-├── InteractiveCmd.js  # Base class for interactive commands: select(), prompt()
+├── CmdBase.js         # execute(args) | print(text) | readLine(cb) | select() | prompt() | static commandName/help/menu
 ├── help.js            Help      — iterates shell._cmdList dynamically
 ├── clear.js           Clear
 ├── echo.js            Echo
@@ -326,10 +327,10 @@ js/cmd/
 | `static get help()` | Description shown in `help` output |
 | `static get menu()` | Menu description or `null` to hide from menu |
 
-### InteractiveCmd.select() — 2D grid selection
+### CmdBase.select() — 2D grid selection
 
-`InteractiveCmd` extends `CmdBase` for commands that need interactive
-keyboard-driven selection (MbtiCmd, AstrologyCmd).
+`InteractiveCmd` (merged into `CmdBase`) provides keyboard-driven selection
+for commands that need interactive input (MbtiCmd, AstrologyCmd).
 
 ```js
 select({
