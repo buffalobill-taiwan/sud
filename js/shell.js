@@ -101,6 +101,15 @@ export class DemoShell {
     handleInput(data) {
         if (!this.running) return;
 
+        if (this.activeDialog && !this.activeDialog.closed) {
+            this.activeDialog.handleKey(data);
+            if (this.activeDialog && this.activeDialog.closed) {
+                this.activeDialog = null;
+            }
+            if (!this.activeDialog) this._schedulePrompt();
+            return;
+        }
+
         if (this.typewriter.isActive()) {
             for (let i = 0; i < data.length; i++) {
                 const ch = data[i];
@@ -116,15 +125,6 @@ export class DemoShell {
                 }
             }
             this._queuedInput.push(data);
-            return;
-        }
-
-        if (this.activeDialog && !this.activeDialog.closed) {
-            this.activeDialog.handleKey(data);
-            if (this.activeDialog && this.activeDialog.closed) {
-                this.activeDialog = null;
-            }
-            if (!this.activeDialog) this._schedulePrompt();
             return;
         }
 

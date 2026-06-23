@@ -89,13 +89,88 @@ Mouse event
             → MenuDialog._onMouse: hover/click/wheel on item rows
 ```
 
-### LineEditor extracted
+## Shell Architecture
 
-`js/LineEditor.js` handles line buffer, history, tab completion, and key
-dispatch (Arrows, Ctrl+C/D/L, BS, Enter). `DemoShell.handleInput`
-delegates to `this.editor.handleKey(data)` when no dialog/readLine
-is active. Callbacks `onExecute(line)` and `onShowPrompt()` decouple
-editing from shell logic.
+### Execution flow
+
+```
+User input
+  → terminal.js _onKeyDown → handleInput(data)
+    → 1. Typewriter active? → queue or Ctrl+C abort
+    → 2. activeDialog? → dialog.handleKey(data)
+    → 3. _readLinePending? → accumulate _readLineBuffer
+    → 4. Normal editing → LineEditor.handleKey(data)
+      → Enter: onExecute(line) → execute(line) → handler(args)
+        → cmd uses print() → Typewriter.enqueue() (async)
+        → _schedulePrompt() decides when prompt shows
+```
+
+### Input routing priority
+
+`handleInput` checks conditions in strict order (shell.js:101):
+
+| Priority | Condition | Handler |
+|---|---|---|
+| 1 | `typewriter.isActive()` | Ctrl+C aborts + `showPrompt()`; else queue |
+| 2 | `activeDialog && !closed` | `dialog.handleKey(data)` |
+| 3 | `_readLinePending` | `_readLineBuffer` accumulation |
+| 4 | (normal) | `editor.handleKey(data)` |
+
+### Output routing
+
+| Producer | Path | Animation |
+|---|---|---|
+| **Cmd** (`this.print()`) | `CmdBase.print()` → `shell.print()` → `Typewriter.enqueue()` | Animated (4ms half, 8ms wide) |
+| **Dialog** (`_writeStr`) | Fills `_buffer[][]` → overlay z=100 | Instant |
+| **Widget** (`putc`) | Fills `_buffer[][]` → overlay z=10 | Instant |
+| **Shell prompt** (`showPrompt`) | `term.write(this.prompt)` (direct, no Typewriter) | Instant |
+| **term.write()** (direct) | Bypasses Typewriter — renderer sees it next frame | Instant |
+
+### Prompt scheduling
+
+`_schedulePrompt()` is the single gate for showing the next prompt
+(shell.js:230). Called from every completion path:
+
+- `onExecute` after command handler returns
+- `onShowPrompt` from LineEditor (Ctrl+C, Ctrl+D, Ctrl+L)
+- `typewriter.onDrain` when animation finishes
+- `readLine` Enter handler
+- dialog close path
+- `cleanup()` in mbti
+- `_busy` release in blink/smallblink
+
+The method shows prompt **only if** all four guards are clear:
+
+```js
+_schedulePrompt() {
+    if (this._busy || this.activeDialog ||
+        this._readLinePending || this.typewriter.isActive()) return;
+    this.showPrompt();
+}
+```
+
+| Guard | Set by | Purpose |
+|---|---|---|
+| `_busy` | `blink`/`smallblink` | Block prompt during async DOM animation |
+| `activeDialog` | Dialog start / mbti | Modal dialog in progress |
+| `_readLinePending` | `readLine()` | Awaiting interactive input |
+| `typewriter.isActive()` | `print()` | Command output still animating |
+
+### How commands control I/O
+
+| Need | Use | Effect |
+|---|---|---|
+| Animated output | `this.print(text)` | Enqueues via Typewriter; prompt waits for drain |
+| Instant output | `this.term.write(text)` | Bypasses Typewriter — use with care |
+| Interactive input | `this.readLine(callback)` | Callback receives trimmed string |
+| **Set as dialog** | `this.shell.activeDialog = this` | Intercept keys + instant buffer output |
+| Block prompt (async) | `this.shell._busy = true/false` | For setTimeout-based animations |
+| Create overlay | `WidgetBase.start()` | Own buffer, composited by renderer |
+
+**Critical rule for cmd authors:** output → `this.print()`, not `this.term.write()`.
+The Typewriter animation is what gates the prompt. Bypassing it risks prompt
+timing bugs. Dialogs and widgets are the exception — they own cell buffers
+and render instantly via overlays (z=100 / z=10).
 
 ### Overlay lifecycle
 
@@ -132,6 +207,7 @@ Dialog.close():
 ## Changes Made This Session
 
 ### Done
+- **Prompt scheduling unified**: `_checkTypewriterDrain()` renamed to `_schedulePrompt()` with four guards (`_busy`, `activeDialog`, `_readLinePending`, `typewriter.isActive()`). `_pendingPrompt` flag removed — typewriter drain calls `_schedulePrompt()` directly. `_pendingAction` indirection eliminated — menu executes commands directly, calc/quiz open ShowDialog inline. blinks/smallblink/mbti cleanup call `_schedulePrompt()`. Single gate for all prompt timing.
 - **Clock command refactored**: `clock` at shell prompt uses `ClockWidget` overlay instead of `shell.clockMode()` (CSI-based). Widget left-aligned (x=0), no background (bg=0). ClockWidget constructor accepts `opts.bg`. Ctrl+C also triggers `_clockCleanup`.
 - **Menu clock uses ClockWidget**: `ClockDialog` frame renders at z=100; `ClockWidget` registered second (overlay array order → widget processes after dialog → time text wins over spaces). Dialog opens first, widget starts second. Clock centered within dialog (content width 20 − widget width 8 = offset 6), bg=0.
 - **`isCovered` removed entirely**: `StateStack.isCovered()` method deleted. `ShellWidgetManager.redrawAll()` and `ClockWidget` interval no longer check `isCovered` — render order in `_blendOverlays` is the only mechanism for visual layering.
@@ -236,19 +312,10 @@ Commands that need multi-line interaction (e.g. `quiz`) use `readLine`:
 ```
 CmdBase.readLine(callback)
   → shell.readLine(callback)    // sets this._readLinePending + this._readLineBuffer = ''
-  → handleInput checks _readLinePending BEFORE normal editing loop
+  → handleInput checks _readLinePending (priority 3, see Shell Architecture)
   → characters accumulated in _readLineBuffer (NOT this.line)
-  → Enter: callback(_readLineBuffer.trim()), then showPrompt()
+  → Enter: callback(_readLineBuffer.trim()), then _schedulePrompt()
   → Ctrl+C: cancel, showPrompt()
-```
-
-**Processing order in `handleInput`:**
-
-```
-1. clockCleanup mode
-2. activeDialog mode
-3. readLine pending → _readLineBuffer (independent)
-4. normal shell editing → this.line
 ```
 
 **Critical rule:** `_readLineBuffer` is completely independent from `this.line`.
@@ -267,7 +334,7 @@ input arrives only through the callback parameter.
 | Newline | instant | `\n` |
 
 - `CmdBase.print()` → `shell.print()` → `Typewriter.enqueue()`
-- Shell defers `showPrompt()` until typewriter drain
+- Shell defers prompt until typewriter drain (via `_schedulePrompt`)
 - Only `Ctrl+C` passes through during animation (aborts + shows prompt)
 - Dialog rendering, widget buffers, and shell prompt bypass typewriter
 

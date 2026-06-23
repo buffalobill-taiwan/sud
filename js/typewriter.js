@@ -64,6 +64,11 @@ export class Typewriter {
         this._drainCallbacks.push(callback);
     }
 
+    removeOnDrain(callback) {
+        const i = this._drainCallbacks.indexOf(callback);
+        if (i >= 0) this._drainCallbacks.splice(i, 1);
+    }
+
     dispose() {
         if (this._rafId) cancelAnimationFrame(this._rafId);
         this._queue = [];
@@ -175,6 +180,6 @@ export class Typewriter {
 
     _flushDrain() {
         this.term.write('\x1B[?25h');
-        for (const cb of this._drainCallbacks) cb();
+        for (const cb of this._drainCallbacks.slice()) cb();
     }
 }
