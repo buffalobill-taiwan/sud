@@ -123,9 +123,7 @@ export class MbtiCmd extends InteractiveCmd {
     execute(args) {
         this.open();
         this.currentIndex = 0;
-        this.selectedOption = 'left';
         this.answers = [];
-        this.isTyping = true;
 
         this.print('\r\n' + bold(cyan('=== MBTI 職業性格測驗 (互動版) ===')) + '\r\n');
         this.print(yellow('使用 [左/右方向鍵] 切換選項，按 [Enter] 確認選擇，[Ctrl+C] 中斷退出。') + '\r\n\r\n');
@@ -138,79 +136,38 @@ export class MbtiCmd extends InteractiveCmd {
         ];
 
         this.questions = this._shuffle(selected);
-        this.printThen('', () => this.drawQuestion());
+        this._askNext();
     }
 
-    drawQuestion() {
-        this.isTyping = true;
+    _askNext() {
         const q = this.questions[this.currentIndex];
+        const shuffled = Math.random() < 0.5;
+        const opts = shuffled ? [q.bText, q.aText] : [q.aText, q.bText];
 
-        this.currentQuestionShuffled = Math.random() < 0.5;
-
-        this.printThen(bold(cyan(`[問題 ${this.currentIndex + 1}/8] `)) + bold(white(q.text)) + '\r\n', () => {
-            this.isTyping = false;
-            this.drawOptions();
+        this.select({
+            text: bold(cyan(`[問題 ${this.currentIndex + 1}/8] `)) + bold(white(q.text)) + '\r\n',
+            options: opts,
+            move: (data, cur) => {
+                if (data === '\x1B[D') return 0;
+                if (data === '\x1B[C') return 1;
+                return cur;
+            },
+            render: (sel, opts, term) => {
+                term.write('\r\x1B[K  ' +
+                    opts.map((o, i) => i === sel ? bold(green('▶ ' + o)) : '  ' + o).join('      '));
+            },
+            onPick: (idx) => {
+                const answer = shuffled ? (idx === 0 ? 'B' : 'A') : (idx === 0 ? 'A' : 'B');
+                this.answers.push(answer);
+                this.term.write('\r\n\r\n');
+                this.currentIndex++;
+                if (this.currentIndex < this.questions.length) {
+                    this._askNext();
+                } else {
+                    this.showResults();
+                }
+            },
         });
-    }
-
-    drawOptions() {
-        const q = this.questions[this.currentIndex];
-
-        let leftText, rightText;
-        if (this.currentQuestionShuffled) {
-            leftText = q.bText;
-            rightText = q.aText;
-        } else {
-            leftText = q.aText;
-            rightText = q.bText;
-        }
-
-        const optLeft = this.selectedOption === 'left'
-            ? bold(green('▶ ' + leftText))
-            : '  ' + leftText;
-        const optRight = this.selectedOption === 'right'
-            ? bold(green('▶ ' + rightText))
-            : '  ' + rightText;
-
-        this.term.write('\r\x1B[K  ' + optLeft + '      ' + optRight);
-    }
-
-    _onKey(data) {
-        if (data === '\x1B[D') {
-            if (this.selectedOption !== 'left') {
-                this.selectedOption = 'left';
-                this.drawOptions();
-            }
-            return;
-        }
-        if (data === '\x1B[C') {
-            if (this.selectedOption !== 'right') {
-                this.selectedOption = 'right';
-                this.drawOptions();
-            }
-            return;
-        }
-
-        const code = data.charCodeAt(0);
-        if (code === 0x0D || code === 0x0A) {
-            let answerValue;
-            if (this.currentQuestionShuffled) {
-                answerValue = this.selectedOption === 'left' ? 'B' : 'A';
-            } else {
-                answerValue = this.selectedOption === 'left' ? 'A' : 'B';
-            }
-            this.answers.push(answerValue);
-
-            this.term.write('\r\n\r\n');
-
-            this.currentIndex++;
-            if (this.currentIndex < this.questions.length) {
-                this.selectedOption = 'left';
-                this.drawQuestion();
-            } else {
-                this.showResults();
-            }
-        }
     }
 
     onCancel() {

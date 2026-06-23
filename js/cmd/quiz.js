@@ -3,11 +3,11 @@ import { cyan, bold, green, red, white } from '../sgr.js';
 
 export class Quiz extends CmdBase {
     execute(args) {
-        const a = Math.floor(Math.random() * 9) + 1;
+        let a = Math.floor(Math.random() * 9) + 1;
         let b = Math.floor(Math.random() * 9) + 1;
         const ops = ['+', '-', '\u00D7'];
         const op = ops[Math.floor(Math.random() * 3)];
-        if (op === '-' && a < b) b = [a, a = b][0];
+        if (op === '-' && a < b) [a, b] = [b, a];
         const answer = op === '+' ? a + b : op === '-' ? a - b : a * b;
 
         this.print(cyan(a + ' ' + op + ' ' + b + ' = ?') + '\n');
