@@ -56,6 +56,7 @@ Open `index.html` in a modern browser, or visit the live demo:
 
 | Command | Description |
 |---------|-------------|
+| `art` | Render ASCII art from a random artwork |
 | `ascii` | Show ANSI color chart (16 color + 256 color cube) |
 | `astrology` | Today's horoscope for your zodiac sign |
 | `blink` | Flash the screen N times (default 1) |

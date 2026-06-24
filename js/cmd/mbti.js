@@ -120,57 +120,54 @@ export class MbtiCmd extends CmdBase {
         return array;
     }
 
-    execute(args) {
+    async execute(args) {
         this.open();
-        this.currentIndex = 0;
-        this.answers = [];
+        try {
+            this.answers = [];
 
-        this.print('\r\n' + bold(cyan('=== MBTI 職業性格測驗 (互動版) ===')) + '\r\n');
-        this.print(yellow('使用 [左/右方向鍵] 切換選項，按 [Enter] 確認選擇，[Ctrl+C] 中斷退出。') + '\r\n\r\n');
+            this.print('\r\n' + bold(cyan('=== MBTI 職業性格測驗 (互動版) ===')) + '\r\n');
+            this.print(yellow('使用 [左/右方向鍵] 切換選項，按 [Enter] 確認選擇，[Ctrl+C] 中斷退出。') + '\r\n\r\n');
 
-        const selected = [
-            ...this._shuffle([...this.pools.EI]).slice(0, 2),
-            ...this._shuffle([...this.pools.SN]).slice(0, 2),
-            ...this._shuffle([...this.pools.TF]).slice(0, 2),
-            ...this._shuffle([...this.pools.JP]).slice(0, 2),
-        ];
+            const selected = [
+                ...this._shuffle([...this.pools.EI]).slice(0, 2),
+                ...this._shuffle([...this.pools.SN]).slice(0, 2),
+                ...this._shuffle([...this.pools.TF]).slice(0, 2),
+                ...this._shuffle([...this.pools.JP]).slice(0, 2),
+            ];
 
-        this.questions = this._shuffle(selected);
-        this._askNext();
-    }
+            this.questions = this._shuffle(selected);
 
-    _askNext() {
-        const q = this.questions[this.currentIndex];
-        const shuffled = Math.random() < 0.5;
-        const rowOpts = shuffled ? [q.bText, q.aText] : [q.aText, q.bText];
+            for (let i = 0; i < this.questions.length; i++) {
+                const q = this.questions[i];
+                const shuffled = Math.random() < 0.5;
+                const rowOpts = shuffled ? [q.bText, q.aText] : [q.aText, q.bText];
 
-        this.select({
-            text: bold(cyan(`[問題 ${this.currentIndex + 1}/8] `)) + bold(white(q.text)) + '\r\n',
-            options: [rowOpts],
-            onPick: (row, col, value) => {
-                const answer = shuffled ? (col === 0 ? 'B' : 'A') : (col === 0 ? 'A' : 'B');
+                const result = await this.selectAsync({
+                    text: bold(cyan(`[問題 ${i + 1}/${this.questions.length}] `)) + bold(white(q.text)) + '\r\n',
+                    options: [rowOpts],
+                });
+
+                if (!result) {
+                    this.term.write('\r\n' + red('^C 測驗已中斷') + '\r\n');
+                    return;
+                }
+
+                const answer = shuffled ? (result.col === 0 ? 'B' : 'A') : (result.col === 0 ? 'A' : 'B');
                 this.answers.push(answer);
                 this.term.write('\r\n\r\n');
-                this.currentIndex++;
-                if (this.currentIndex < this.questions.length) {
-                    this._askNext();
-                } else {
-                    this.showResults();
-                }
-            },
-        });
+            }
+
+            await this._showResults();
+        } finally {
+            this.close();
+        }
     }
 
-    onCancel() {
-        this.term.write('\r\n' + red('^C 測驗已中斷') + '\r\n');
-        this.close();
-    }
-
-    showResults() {
+    async _showResults() {
         let e = 0, i = 0, s = 0, n = 0, t = 0, f = 0, j = 0, p = 0;
-        for (let idx = 0; idx < this.questions.length; idx++) {
-            const q = this.questions[idx];
+        for (let idx = 0; idx < this.answers.length; idx++) {
             const ans = this.answers[idx];
+            const q = this.questions[idx];
             if (q.dim === 'E/I') {
                 if (ans === 'A') e++; else i++;
             } else if (q.dim === 'S/N') {
@@ -219,10 +216,8 @@ export class MbtiCmd extends CmdBase {
         this.print(`  ${profile.desc}\r\n`);
         this.print(bold(yellow('==================================================')) + '\r\n\r\n');
 
-        this.printThen('', () => {
-            this.isTyping = false;
-            this.close();
-        });
+        await this.waitForPrint();
+        this.isTyping = false;
     }
 
     static get commandName() { return 'mbti'; }

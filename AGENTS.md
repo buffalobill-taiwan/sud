@@ -91,30 +91,62 @@ Mouse event
 
 ## Shell Architecture
 
+### Frame stack
+
+`DemoShell` uses a frame stack (`_cmdStack`) instead of a flat command queue.
+Each executing entity is a `CmdFrame` that controls I/O while on top of the
+stack:
+
+| Frame | Source | `blocked` condition | I/O owner |
+|---|---|---|---|
+| `SyncCmdFrame` | `js/CmdFrame.js` | typewriter active, `_busy`, or `_asyncPending` | shell typewriter |
+| `DialogFrame` | `js/CmdFrame.js` | `!dialog.closed` | dialog's `handleKey` |
+
+```
+Empty stack                     → editor mode, LineEditor handles input
+execute("help")                 → push SyncCmdFrame → handler runs
+                                  → typewriter active → block
+                                  → drain → finish → pop → prompt
+execute("blink")                → push SyncCmdFrame → handler sets _busy=true
+                                  → block on _busy → _busy=false → finish → prompt
+execute("art")                  → push SyncCmdFrame → handler returns Promise
+                                  → block on _asyncPending → promise resolves
+                                  → typewriter active → block → drain → finish → prompt
+execute("menu")                 → push SyncCmdFrame → handler calls _createDialog
+                                  → push DialogFrame(menuDlg) atop SyncCmdFrame
+                                  → SyncCmdFrame done (buried under DialogFrame)
+                                  → dialog I/O until close → pop chain → prompt
+CmdBase.open()/close()          → open pushes DialogFrame
+                                  → close sets closed=true → frame detects → pop
+```
+
 ### Execution flow
 
 ```
 User input
   → terminal.js _onKeyDown → handleInput(data)
-    → 1. activeDialog? → dialog.handleKey(data)
-    → 2. Typewriter active? → queue or Ctrl+C abort
-    → 3. _readLinePending? → accumulate _readLineBuffer
-    → 4. Normal editing → LineEditor.handleKey(data)
-      → Enter: onExecute(line) → execute(line) → handler(args)
-        → cmd uses print() → Typewriter.enqueue() (async)
-        → _schedulePrompt() decides when prompt shows
+    → top = _cmdStack[last]
+      → top.handleInput?          → frame handles (dialog, readLine, etc.)
+      → top.blocked && Ctrl+C?    → _abortAll()
+      → top.blocked?              → _queuedInput.push(data)
+      → !top? && typewriter.active → _queuedInput or Ctrl+C
+      → !top? && _readLinePending? → _handleReadLineInput
+      → else                      → LineEditor.handleKey(data)
+        → Enter: onExecute(line) → execute(line) → push SyncCmdFrame → _tick
 ```
 
 ### Input routing priority
 
-`handleInput` checks conditions in strict order (shell.js:101):
+`handleInput` checks conditions in strict order (shell.js:275):
 
 | Priority | Condition | Handler |
 |---|---|---|
-| 1 | `activeDialog && !closed` | `dialog.handleKey(data)` |
-| 2 | `typewriter.isActive()` | Ctrl+C aborts + `showPrompt()`; else queue |
-| 3 | `_readLinePending` | `_readLineBuffer` accumulation |
-| 4 | (normal) | `editor.handleKey(data)` |
+| 1 | `top.handleInput` (DialogFrame) | `frame.handleInput(data)` → auto-unblock → pop |
+| 2 | `_readLinePending` | `_handleReadLineInput(data)` |
+| 3 | `top.blocked` | Ctrl+C → `_abortAll()`; else queue |
+| 4 | No frame + typewriter active | Ctrl+C → `_abortAll()`; else queue |
+| 5 | No frame + `_readLinePending` | `_handleReadLineInput(data)` |
+| 6 | (normal) | `editor.handleKey(data)` |
 
 ### Output routing
 
@@ -126,50 +158,56 @@ User input
 | **Shell prompt** (`showPrompt`) | `term.write(this.prompt)` (direct, no Typewriter) | Instant |
 | **term.write()** (direct) | Bypasses Typewriter — renderer sees it next frame | Instant |
 
-### Prompt scheduling
+### Prompt scheduling — `_processStack`
 
-`_schedulePrompt()` is the single gate for showing the next prompt
-(shell.js:230). Called from every completion path:
+`_processStack()` (shell.js:159) is the single gate for advancing the frame
+stack and showing the next prompt. Called from every completion path via
+`this._tick()`:
 
-- `onExecute` after command handler returns
+- `onExecute` after `execute()` pushes a frame
 - `onShowPrompt` from LineEditor (Ctrl+C, Ctrl+D, Ctrl+L)
 - `typewriter.onDrain` when animation finishes
+- async handler `.then()` after async command completes
 - `readLine` Enter handler
-- dialog close path
-- `cleanup()` in mbti
+- dialog frame auto-unblock (dialog closed)
 - `_busy` release in blink/smallblink
 
-The method shows prompt **only if** all four guards are clear:
+The loop pops done frames, starts new frames, and shows prompt only when the
+stack is empty and all blocking conditions clear:
 
 ```js
-_schedulePrompt() {
-    if (this._busy || this.activeDialog ||
-        this._readLinePending || this.typewriter.isActive()) return;
-    this.showPrompt();
+_processStack() {
+    this.promptShown = false;
+    while (true) {
+        while (top.done) pop();
+        if (stack empty) {
+            if (typewriter.active) return;  // wait for drain
+            if (!_busy && !_readLinePending && !promptShown)
+                this.showPrompt();
+            return;
+        }
+        frame = top;
+        if (!frame.started) { frame.start(); continue; }
+        if (frame.blocked) return;
+        frame.finish();  // done → loop pops it
+    }
 }
 ```
-
-| Guard | Set by | Purpose |
-|---|---|---|
-| `_busy` | `blink`/`smallblink` | Block prompt during async DOM animation |
-| `activeDialog` | Dialog start / mbti | Modal dialog in progress |
-| `_readLinePending` | `readLine()` | Awaiting interactive input |
-| `typewriter.isActive()` | `print()` | Command output still animating |
 
 ### How commands control I/O
 
 | Need | Use | Effect |
 |---|---|---|
-| Animated output | `this.print(text)` | Enqueues via Typewriter; prompt waits for drain |
+| Animated output | `this.print(text)` | Enqueues via Typewriter; frame blocks on it |
 | Instant output | `this.term.write(text)` | Bypasses Typewriter — use with care |
-| Interactive input | `this.readLine(callback)` | Callback receives trimmed string |
-| **Set as dialog** | `this.shell.activeDialog = this` | Intercept keys + instant buffer output |
-| Block prompt (async) | `this.shell._busy = true/false` | For setTimeout-based animations |
+| Interactive input | `this.readLine(callback)` | Callback receives trimmed string; frame blocks via `_readLinePending` |
+| **Modal dialog** | `this.open()` / `this.close()` (from CmdBase) | Pushes/pops DialogFrame; frame handles keys |
 | Create overlay | `WidgetBase.start()` | Own buffer, composited by renderer |
+| Async handler | `async execute()` | SyncCmdFrame blocks on `_asyncPending` until Promise resolves |
 
 **Critical rule for cmd authors:** output → `this.print()`, not `this.term.write()`.
-The Typewriter animation is what gates the prompt. Bypassing it risks prompt
-timing bugs. Dialogs and widgets are the exception — they own cell buffers
+The Typewriter animation is what gates the frame lifecycle. Bypassing it risks
+prompt timing bugs. Dialogs and widgets are the exception — they own cell buffers
 and render instantly via overlays (z=100 / z=10).
 
 ### Overlay lifecycle
@@ -236,6 +274,7 @@ unaddressed:
 ## Changes Made This Session
 
 ### Done
+- **Frame stack model (`CmdFrame.js`)**: Replaced `_cmdQueue` + `_executing` + `activeDialog` guard with a unified `_cmdStack`. `SyncCmdFrame` for synchronous/async commands, `DialogFrame` for dialogs. `_processStack()` loop handles the lifecycle (pop done → start → check blocked → finish). `handleInput()` routes via stack top. `_busy` and `_readLinePending` remain as shell-level blocking conditions checked by `SyncCmdFrame.blocked`. Fixed `_requestPrompt()` → `_tick()` in blink/smallblink. Fixed async handler race (art/mbti) via `_asyncPending` flag.
 - **Prompt scheduling unified**: `_checkTypewriterDrain()` renamed to `_schedulePrompt()` with four guards (`_busy`, `activeDialog`, `_readLinePending`, `typewriter.isActive()`). `_pendingPrompt` flag removed — typewriter drain calls `_schedulePrompt()` directly. `_pendingAction` indirection eliminated — menu executes commands directly, calc/quiz open ShowDialog inline. blinks/smallblink/mbti cleanup call `_schedulePrompt()`. Single gate for all prompt timing.
 - **Clock command refactored**: `clock` at shell prompt uses `ClockWidget` overlay instead of `shell.clockMode()` (CSI-based). Widget left-aligned (x=0), no background (bg=0). ClockWidget constructor accepts `opts.bg`. Ctrl+C also triggers `_clockCleanup`.
 - **Menu clock uses ClockWidget**: `ClockDialog` frame renders at z=100; `ClockWidget` registered second (overlay array order → widget processes after dialog → time text wins over spaces). Dialog opens first, widget starts second. Clock centered within dialog (content width 20 − widget width 8 = offset 6), bg=0.
@@ -270,6 +309,7 @@ unaddressed:
 - **InteractiveCmd merged into CmdBase**: All interactive methods (`select()`, `prompt()`, `open()/close()`, `handleKey()`) moved into `CmdBase`. `InteractiveCmd.js` deleted. `mbti.js`/`astrology.js` now import `CmdBase` directly.
 
 ### Removed
+- `_cmdQueue`, `_executing`, `activeDialog` — replaced by `_cmdStack` / `CmdFrame`
 - `saveArea()`, `restoreArea()`, `saveCursor()`, `restoreCursor()` — no longer needed
 - `ask()` — unused dead code, removed
 - `neofetch`, `uname`, `whoami` — three fileless commands removed
@@ -519,6 +559,7 @@ draw() {
 - `js/dialog/InputDialog.js`: Input dialog
 - `js/dialog/ShowDialog.js`: Show message dialog
 - `js/typewriter.js`: Animated text output
+- `js/CmdFrame.js`: Frame stack types (CmdFrame, SyncCmdFrame, DialogFrame)
 - `js/cmd/WidgetBase.js`: Overlay lifecycle, `_buffer`, `putc()`
 - `js/cmd/widgets/ClockWidget.js`: TSR clock using `putc()`
 - `js/cmd/widgets/DVDWidget.js`: Bouncing DVD logo — 7×3 color block, 120ms interval

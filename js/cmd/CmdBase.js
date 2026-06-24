@@ -13,9 +13,20 @@
  *   showHelp()         — prints commandName + help + usage
  *   select(opts)       — 2D grid selection (interactive commands)
  *   prompt(text, cb)   — readLine with Typewriter gating (interactive commands)
+ *
+ * Promise-based APIs (use from async execute()):
+ *   await readLineAsync()     — Promise<string> user input
+ *   await selectAsync(opts)   — Promise<{row,col,value}|null>
+ *   await waitForPrint()      — resolve when typewriter drains
+ *   await showMessage(msg)    — quick ShowDialog, resolves on close
+ *   await ask(question)       — quick InputDialog, Promise<string|null>
+ *   await confirm(question)   — quick Y/N selection
  */
 
 import { red, bold, yellow, green } from '../sgr.js';
+import { DialogFrame } from '../CmdFrame.js';
+import { ShowDialog } from '../dialog/ShowDialog.js';
+import { InputDialog } from '../dialog/InputDialog.js';
 
 export class CmdBase {
     constructor(shell) {
@@ -25,6 +36,7 @@ export class CmdBase {
         this.isTyping = false;
         this.inHandleKey = false;
         this._cbSession = 0;
+        this._selectResolve = null;
     }
     execute(args) {}
     print(text) { this.shell.print(text); }
@@ -80,22 +92,32 @@ export class CmdBase {
 
     open() {
         this.closed = false;
-        this.shell.activeDialog = this;
         this.term.write('\x1B[?25l');
+        const frame = new DialogFrame(this.shell, this);
+        frame.started = true;
+        this._frame = frame;
+        this.shell._cmdStack.push(frame);
+        this.shell._tick();
     }
 
     close() {
+        if (this.closed) return;
         this.closed = true;
         this.term.write('\x1B[?25h');
+        if (this._frame) {
+            this._frame.finish();
+            this._frame = null;
+        }
         if (!this.inHandleKey) {
-            if (this.shell.activeDialog === this) {
-                this.shell.activeDialog = null;
-            }
-            this.shell._schedulePrompt();
+            this.shell._tick();
         }
     }
 
     onCancel() {
+        if (this._selectResolve) {
+            this._selectResolve(null);
+            this._selectResolve = null;
+        }
         this.close();
     }
 
@@ -227,6 +249,78 @@ export class CmdBase {
             this.isTyping = false;
             this.shell.readLine(onInput);
         });
+    }
+
+    // === Promise-based APIs ===
+
+    readLineAsync() {
+        return new Promise(resolve => this.readLine(resolve));
+    }
+
+    selectAsync(opts) {
+        return new Promise(resolve => {
+            this._selectResolve = resolve;
+            this.select({
+                ...opts,
+                onPick: (row, col, value) => {
+                    this._selectResolve = null;
+                    resolve({ row, col, value });
+                },
+                onCancel: () => {
+                    this._selectResolve = null;
+                    resolve(null);
+                },
+            });
+        });
+    }
+
+    waitForPrint() {
+        return new Promise(resolve => this._afterDrain(resolve));
+    }
+
+    // === Quick dialog helpers ===
+
+    showMessage(msg) {
+        return new Promise(resolve => {
+            const dlg = new ShowDialog(this.term, {
+                message: msg,
+                onExit: resolve,
+            });
+            dlg.open();
+            const frame = new DialogFrame(this.shell, dlg);
+            frame.started = true;
+            this.shell._cmdStack.push(frame);
+            this.shell._tick();
+        });
+    }
+
+    ask(question) {
+        return new Promise(resolve => {
+            const dlg = new InputDialog(this.term, {
+                title: 'Input',
+                prompt: question,
+                onConfirm: val => resolve(val),
+                onCancel: () => resolve(null),
+            });
+            dlg.open();
+            const frame = new DialogFrame(this.shell, dlg);
+            frame.started = true;
+            this.shell._cmdStack.push(frame);
+            this.shell._tick();
+        });
+    }
+
+    async confirm(question) {
+        this.open();
+        try {
+            const result = await this.selectAsync({
+                text: question + '\n',
+                options: [['Yes', 'No']],
+            });
+            return result ? result.col === 0 : false;
+        } finally {
+            this.close();
+        }
     }
 }
 

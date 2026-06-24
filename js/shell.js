@@ -1,14 +1,8 @@
-/**
- * DemoShell — line-editing shell with history, tab completion,
- * command dispatch, and dialog integration.
- *
- * ShellWidgetManager — manages TSR widget lifecycle with scroll region.
- */
-
 import { StateStack, MenuDialog, InputDialog, ShowDialog } from './dialog/index.js';
 import { Typewriter } from './typewriter.js';
 import { LineEditor } from './LineEditor.js';
 import * as cmdModule from './cmd/index.js';
+import { CmdFrame, SyncCmdFrame, DialogFrame } from './CmdFrame.js';
 import { bold, green, yellow, gray, red, white } from './sgr.js';
 
 function tokenize(str) {
@@ -69,20 +63,16 @@ export class DemoShell {
         this.promptShown = false;
         this.running = false;
         this.stateStack = new StateStack(this.term);
-        this.activeDialog = null;
         this.menuDialog = null;
         this.commands = {};
         this.menuItems = [];
         this.cmdList = [];
 
         this.typewriter = new Typewriter(this.term);
-        this.typewriter.onDrain(() => this._schedulePrompt());
+        this.typewriter.onDrain(() => this._tick());
         this.editor = new LineEditor(this.term, {
-            onExecute: async (line) => {
-                await this.execute(line);
-                this._schedulePrompt();
-            },
-            onShowPrompt: () => this._schedulePrompt(),
+            onExecute: (line) => { this.execute(line); },
+            onShowPrompt: () => this._tick(),
         });
         this.editor.setPrompt(this.prompt);
 
@@ -90,8 +80,12 @@ export class DemoShell {
         this._registerCommands();
 
         this.editor.setCommands(Object.keys(this.commands));
+        this._cmdStack = [];
+        this._tickQueued = false;
         this._queuedInput = [];
         this._busy = false;
+        this._readLinePending = null;
+        this._readLineBuffer = '';
         this._dragTarget = null;
         this._savedPositions = {};
 
@@ -149,76 +143,160 @@ export class DemoShell {
         this._readLineBuffer = '';
     }
 
+    _tick() {
+        if (this._tickQueued) return;
+        this._tickQueued = true;
+        Promise.resolve().then(() => {
+            this._tickQueued = false;
+            this._processStack();
+        });
+    }
+
+    _processStack() {
+        this.promptShown = false;
+        while (true) {
+            while (this._cmdStack.length > 0 && this._cmdStack[this._cmdStack.length - 1].done) {
+                this._cmdStack.pop();
+            }
+
+            if (this._cmdStack.length === 0) {
+                if (this.typewriter.isActive()) return;
+                if (!this._busy && !this._readLinePending && !this.promptShown) {
+                    this.showPrompt();
+                }
+                return;
+            }
+
+            const frame = this._cmdStack[this._cmdStack.length - 1];
+
+            if (!frame.started) {
+                frame.started = true;
+                frame.start();
+                continue;
+            }
+
+            if (frame.blocked) return;
+
+            frame.finish();
+        }
+    }
+
+    execute(line) {
+        const trimmed = line.trim();
+        if (trimmed.length === 0) return;
+        this.editor.history.push(trimmed);
+        if (this.editor.history.length > 100) this.editor.history.shift();
+
+        const tokens = tokenize(trimmed);
+        const cmd = tokens[0] ? tokens[0].toLowerCase() : '';
+        const args = tokens.slice(1);
+
+        const handler = this.commands[cmd];
+        if (handler) {
+            this._cmdStack.push(new SyncCmdFrame(this, cmd, args));
+            this._tick();
+        } else {
+            this.print(red('Command not found: ' + cmd) + '\n');
+            this.print('Try ' + yellow('help') + '.\n');
+        }
+    }
+
+    print(text) {
+        this.typewriter.enqueue(text);
+    }
+
+    _handleReadLineInput(data) {
+        for (let i = 0; i < data.length; i++) {
+            const ch = data[i];
+            const code = ch.charCodeAt ? ch.charCodeAt(0) : ch;
+            if (code === 0x0D || code === 0x0A) {
+                const cb = this._readLinePending;
+                this._readLinePending = null;
+                this.term.write('\r\n');
+                cb(this._readLineBuffer.trim());
+                this._readLineBuffer = '';
+                this._tick();
+                return;
+            }
+            if (code === 0x03) {
+                this._readLinePending = null;
+                this._readLineBuffer = '';
+                this.term.write('^C\n');
+                this.showPrompt();
+                return;
+            }
+            if (code === 0x7F || code === 0x08) {
+                if (this._readLineBuffer.length > 0) {
+                    const last = this._readLineBuffer[this._readLineBuffer.length - 1];
+                    const w = this.term.isWide(last) ? 2 : 1;
+                    this._readLineBuffer = this._readLineBuffer.slice(0, -1);
+                    this.term.write('\b'.repeat(w) + ' '.repeat(w) + '\b'.repeat(w));
+                }
+                continue;
+            }
+            if (code === 0x1B) {
+                if (data[i + 1] === '[' || data[i + 1] === 'O') i += 2;
+                continue;
+            }
+            if (code < 0x20) continue;
+            this._readLineBuffer += ch;
+            this.term.write(ch);
+        }
+    }
+
+    _abortAll() {
+        this._queuedInput = [];
+        this._readLinePending = null;
+        this._readLineBuffer = '';
+        this._cmdStack = [];
+        this.typewriter.abort();
+        this.term.write('^C\n');
+        this._tick();
+    }
+
+    _checkCtrlC(data) {
+        for (let i = 0; i < data.length; i++) {
+            const ch = data[i];
+            const code = ch.charCodeAt ? ch.charCodeAt(0) : ch;
+            if (code === 0x03) {
+                this._abortAll();
+                return;
+            }
+        }
+        this._queuedInput.push(data);
+    }
+
     handleInput(data) {
         if (!this.running) return;
 
-        if (this.activeDialog && !this.activeDialog.closed) {
-            this.activeDialog.handleKey(data);
-            if (this.activeDialog && this.activeDialog.closed) {
-                this.activeDialog = null;
+        const top = this._cmdStack[this._cmdStack.length - 1];
+
+        if (top) {
+            if (top.handleInput) {
+                top.handleInput(data);
+                if (top.done) this._tick();
+                return;
             }
-            if (!this.activeDialog) this._schedulePrompt();
+            if (this._readLinePending) {
+                this._handleReadLineInput(data);
+                return;
+            }
+            if (top.blocked) {
+                this._checkCtrlC(data);
+                return;
+            }
+            this._tick();
             return;
         }
 
         if (this.typewriter.isActive()) {
-            for (let i = 0; i < data.length; i++) {
-                const ch = data[i];
-                const code = ch.charCodeAt ? ch.charCodeAt(0) : ch;
-                if (code === 0x03) {
-                    this._queuedInput = [];
-                    this._readLinePending = null;
-                    this._readLineBuffer = '';
-                    this.typewriter.abort();
-                    this.term.write('^C\n');
-                    this.showPrompt();
-                    return;
-                }
-            }
-            this._queuedInput.push(data);
+            this._checkCtrlC(data);
             return;
         }
-
         if (this._readLinePending) {
-            for (let i = 0; i < data.length; i++) {
-                const ch = data[i];
-                const code = ch.charCodeAt ? ch.charCodeAt(0) : ch;
-                if (code === 0x0D || code === 0x0A) {
-                    const cb = this._readLinePending;
-                    this._readLinePending = null;
-                    this.term.write('\r\n');
-                    cb(this._readLineBuffer.trim());
-                    this._readLineBuffer = '';
-                    this._schedulePrompt();
-                    return;
-                }
-                if (code === 0x03) {
-                    this._readLinePending = null;
-                    this._readLineBuffer = '';
-                    this.term.write('^C\n');
-                    this.showPrompt();
-                    return;
-                }
-                if (code === 0x7F || code === 0x08) {
-                    if (this._readLineBuffer.length > 0) {
-                        const last = this._readLineBuffer[this._readLineBuffer.length - 1];
-                        const w = this.term.isWide(last) ? 2 : 1;
-                        this._readLineBuffer = this._readLineBuffer.slice(0, -1);
-                        this.term.write('\b'.repeat(w) + ' '.repeat(w) + '\b'.repeat(w));
-                    }
-                    continue;
-                }
-                if (code === 0x1B) {
-                    if (data[i + 1] === '[' || data[i + 1] === 'O') i += 2;
-                    continue;
-                }
-                if (code < 0x20) continue;
-                this._readLineBuffer += ch;
-                this.term.write(ch);
-            }
+            this._handleReadLineInput(data);
             return;
         }
-
         this.editor.handleKey(data);
     }
 
@@ -255,34 +333,6 @@ export class DemoShell {
         return false;
     }
 
-    async execute(line) {
-        const trimmed = line.trim();
-        if (trimmed.length === 0) return;
-        this.editor.history.push(trimmed);
-        if (this.editor.history.length > 100) this.editor.history.shift();
-
-        const tokens = tokenize(trimmed);
-        const cmd = tokens[0] ? tokens[0].toLowerCase() : '';
-        const args = tokens.slice(1);
-
-        const handler = this.commands[cmd];
-        if (handler) {
-            await handler(args);
-        } else {
-            this.print(red('Command not found: ' + cmd) + '\n');
-            this.print('Try ' + yellow('help') + '.\n');
-        }
-    }
-
-    print(text) {
-        this.typewriter.enqueue(text);
-    }
-
-    _schedulePrompt() {
-        if (this._busy || this.activeDialog || this._readLinePending || this.typewriter.isActive()) return;
-        this.showPrompt();
-    }
-
     _createDialog(DialogClass, key, opts, ...ctorArgs) {
         const pos = this._savedPositions[key] || {};
         const dlg = new DialogClass(this.term, ...ctorArgs, {
@@ -292,8 +342,11 @@ export class DemoShell {
             y: pos.y,
             savePos: (x, y) => { this._savedPositions[key] = { x, y }; },
         });
-        this.activeDialog = dlg;
         dlg.open();
+        const frame = new DialogFrame(this, dlg);
+        frame.started = true;
+        this._cmdStack.push(frame);
+        this._tick();
         return dlg;
     }
 
@@ -303,10 +356,7 @@ export class DemoShell {
             prompt: '算式：',
             footer: 'Enter Confirm  ESC Back',
             onConfirm: (expr) => {
-                if (!expr.trim()) {
-                    this.activeDialog = menuDlg;
-                    return;
-                }
+                if (!expr.trim()) return;
                 let msg;
                 try {
                     const result = Function('"use strict"; return (' + expr + ')')();
@@ -316,19 +366,10 @@ export class DemoShell {
                 }
                 this._createDialog(ShowDialog, 'show', {
                     message: msg,
-                    onExit: () => {
-                        if (menuDlg && !menuDlg.closed) {
-                            this.activeDialog = menuDlg;
-                        } else {
-                            this.activeDialog = null;
-                            this._schedulePrompt();
-                        }
-                    },
+                    onExit: () => {},
                 });
             },
-            onCancel: () => {
-                this.activeDialog = menuDlg;
-            },
+            onCancel: () => {},
         });
     }
 
@@ -345,10 +386,7 @@ export class DemoShell {
             prompt: `${a} ${op} ${b} = ?`,
             footer: 'Enter Answer  ESC Back',
             onConfirm: (expr) => {
-                if (!expr.trim()) {
-                    if (menuDlg) this.activeDialog = menuDlg;
-                    return;
-                }
+                if (!expr.trim()) return;
                 const userAns = parseInt(expr.trim(), 10);
                 let msg;
                 if (userAns === answer) {
@@ -358,19 +396,10 @@ export class DemoShell {
                 }
                 this._createDialog(ShowDialog, 'show', {
                     message: msg,
-                    onExit: () => {
-                        if (menuDlg && !menuDlg.closed) {
-                            this.activeDialog = menuDlg;
-                        } else {
-                            this.activeDialog = null;
-                            this._schedulePrompt();
-                        }
-                    },
+                    onExit: () => {},
                 });
             },
-            onCancel: () => {
-                if (menuDlg) this.activeDialog = menuDlg;
-            },
+            onCancel: () => {},
         });
     }
 
@@ -391,8 +420,7 @@ export class DemoShell {
                     return;
                 }
                 this.menuDialog = null;
-                this.commands[item.name]([]);
-                this._schedulePrompt();
+                this._cmdStack.push(new SyncCmdFrame(this, item.name, []));
                 return 'close';
             },
             onCancel: () => {}

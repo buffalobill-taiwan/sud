@@ -30,7 +30,7 @@ export class Blink extends CmdBase {
                 setTimeout(() => this._flash(el, remaining - 1), 100);
             } else {
                 this.shell._busy = false;
-                this.shell._schedulePrompt();
+                this.shell._tick();
             }
         }, 60);
     }
