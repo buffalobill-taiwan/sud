@@ -78,8 +78,8 @@ export class DemoShell {
         this.typewriter = new Typewriter(this.term);
         this.typewriter.onDrain(() => this._schedulePrompt());
         this.editor = new LineEditor(this.term, {
-            onExecute: (line) => {
-                this.execute(line);
+            onExecute: async (line) => {
+                await this.execute(line);
                 this._schedulePrompt();
             },
             onShowPrompt: () => this._schedulePrompt(),
@@ -255,7 +255,7 @@ export class DemoShell {
         return false;
     }
 
-    execute(line) {
+    async execute(line) {
         const trimmed = line.trim();
         if (trimmed.length === 0) return;
         this.editor.history.push(trimmed);
@@ -267,7 +267,7 @@ export class DemoShell {
 
         const handler = this.commands[cmd];
         if (handler) {
-            handler(args);
+            await handler(args);
         } else {
             this.print(red('Command not found: ' + cmd) + '\n');
             this.print('Try ' + yellow('help') + '.\n');
