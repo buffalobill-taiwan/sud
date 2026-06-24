@@ -1,11 +1,12 @@
 #!/usr/bin/env node
 /**
- * png2art — Convert a PNG image to an art.js pixel array.
+ * png2art — Convert a PNG image to an artwork module for js/cmd/art/.
  *
  * Usage:
- *   node tools/png2art.js /path/to/image.png [--name VAR_NAME]
+ *   node tools/png2art.js /path/to/image.png > js/cmd/art/foo.js
+ *   node tools/png2art.js /path/to/image.png --name "Display Name" > js/cmd/art/foo.js
  *
- * Output: JS array literal + ARTWORKS entry template, printed to stdout.
+ * Output: ES module exporting default { name, cols, pixels }.
  * Requires ImageMagick `convert` on PATH.
  */
 
@@ -14,21 +15,20 @@ const { basename } = require('path');
 
 const filePath = process.argv[2];
 if (!filePath) {
-    process.stderr.write('Usage: node tools/png2art.js <image.png> [--name VAR_NAME]\n');
+    process.stderr.write('Usage: node tools/png2art.js <image.png> [--name "Display Name"]\n');
     process.exit(1);
 }
 
-let varName;
+let artworkName;
 for (let i = 3; i < process.argv.length; i++) {
     if (process.argv[i] === '--name' && i + 1 < process.argv.length) {
-        varName = process.argv[++i];
+        artworkName = process.argv[++i];
     }
 }
-if (!varName) {
-    varName = basename(filePath, '.png')
-        .replace(/[^a-zA-Z0-9_]/g, '_')
-        .replace(/^(\d)/, '_$1')
-        .toUpperCase() + '_PIXELS';
+if (!artworkName) {
+    artworkName = basename(filePath, '.png')
+        .replace(/[_-]/g, ' ')
+        .replace(/\b\w/g, c => c.toUpperCase());
 }
 
 let txt;
@@ -65,14 +65,13 @@ for (let r = 0; r < H; r++) {
     rows.push("    " + rowPixels.join(',') + ",");
 }
 
-const out = `\
-// ${filePath} — ${W}×${H} (${pixels.length} pixels)
-// Add to ARTWORKS:
-// { name: '${basename(filePath, '.png')}', cols: ${W}, pixels: ${varName} },
-//
-const ${varName} = [
+const out = `export default {
+    name: '${artworkName}',
+    cols: ${W},
+    pixels: [
 ${rows.join('\n')}
-];
+    ],
+};
 `;
 
 process.stdout.write(out);

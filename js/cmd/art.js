@@ -42,7 +42,6 @@ const ARTWORKS = [
     () => import('./art/kanagawa.js'),
     () => import('./art/glaneuses.js'),
     () => import('./art/blacklotus.js'),
-    () => import('./art/guernica.js'),
 ];
 
 function _hexToRgb(hex) {
