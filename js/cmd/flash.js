@@ -60,7 +60,7 @@ export class Flash extends CmdBase {
     }
 
     static get commandName() { return 'flash'; }
-    static get help() { return 'Flash the screen N times (default 1). Use --border for border flash.'; }
+    static get help() { return 'Flash screen N times (default 1). --border for border flash.'; }
     static get menu() { return 'Flash the screen'; }
     static get usage() { return 'flash [--border] [count]'; }
 }
