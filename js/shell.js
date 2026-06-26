@@ -34,6 +34,7 @@ export class DemoShell {
         this._tickQueued = false;
         this._queuedInput = [];
         this._busy = false;
+        this._abortGeneration = 0;
         this._readLinePending = null;
         this._readLineBuffer = '';
         this._dragTarget = null;
@@ -200,6 +201,8 @@ export class DemoShell {
     }
 
     _abortAll() {
+        this._abortGeneration++;
+        this._busy = false;
         this._queuedInput = [];
         this._readLinePending = null;
         this._readLineBuffer = '';

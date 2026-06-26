@@ -2,6 +2,7 @@ import { CmdBase } from './CmdBase.js';
 
 export class Flash extends CmdBase {
     execute(args) {
+        this._flashGen = this.shell._abortGeneration;
         const p = this.parseArgs(args);
         const border = p.flag('--border', '-b');
         const count = p.rest.length > 0 ? parseInt(p.rest[0], 10) : 1;
@@ -47,8 +48,10 @@ export class Flash extends CmdBase {
     }
 
     _flash(el, remaining) {
+        if (this._flashGen !== this.shell._abortGeneration) return;
         el.classList.add('active');
         setTimeout(() => {
+            if (this._flashGen !== this.shell._abortGeneration) return;
             el.classList.remove('active');
             if (remaining > 1) {
                 setTimeout(() => this._flash(el, remaining - 1), 100);
