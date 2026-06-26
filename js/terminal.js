@@ -1,23 +1,15 @@
-/**
- * Terminal — thin coordinator composing Screen, Parser, and Renderer.
- *
- * Public API: write(), focus(), resize(), clearBuffer(),
- * scrollbackUp/Down(), lineFeed(), getRow/setRow(),
- * cursorHidden getter/setter, markAllDirty(), isWide().
- *
- * Callbacks: onData(data), onResize(cols, rows).
- */
-
 import { Screen } from './Screen.js';
 import { Parser } from './Parser.js';
 import { Renderer } from './Renderer.js';
+import { DEFAULT_COLS, DEFAULT_ROWS } from './constants.js';
+import { warn } from './sgr.js';
 
 export class Terminal {
     constructor(container, opts = {}) {
         this.onData = null;
         this.onResize = null;
 
-        this.screen = new Screen(opts.cols || 80, opts.rows || 25);
+        this.screen = new Screen(opts.cols || DEFAULT_COLS, opts.rows || DEFAULT_ROWS);
         this.parser = new Parser(this.screen, {
             onSend: (data) => this._send(data),
         });
@@ -37,8 +29,6 @@ export class Terminal {
 
         if (!opts.noAutoRender) this.renderer.startRenderLoop();
     }
-
-    // ── Delegated props ──
 
     get cols() { return this.screen.cols; }
     get rows() { return this.screen.rows; }
@@ -76,8 +66,7 @@ export class Terminal {
     write(data) { this.parser.write(data); }
 
     focus() {
-        this.textarea.focus();
-        this.textarea.value = '';
+        this._focusInput();
     }
 
     clearBuffer() { this.screen.clearBuffer(); }
@@ -197,7 +186,7 @@ export class Terminal {
             e.preventDefault(); return;
         }
         if (ctrl && key === '-') {
-            this.viewOffset = Math.min(this.screen._maxViewOffset(), this.viewOffset + 1);
+            this.viewOffset = Math.min(this.screen.maxViewOffset(), this.viewOffset + 1);
             this.screen.markAllDirty();
             e.preventDefault(); return;
         }
@@ -209,7 +198,9 @@ export class Terminal {
             const sel = document.getSelection().toString();
             if (!sel) return true;
             if (navigator.clipboard) {
-                navigator.clipboard.writeText(sel).catch(() => {});
+                navigator.clipboard.writeText(sel).catch(() => {
+                    warn('clipboard write failed');
+                });
             } else {
                 const ta = document.createElement('textarea');
                 ta.value = sel;
@@ -224,7 +215,11 @@ export class Terminal {
         if ((shift && key === 'Insert') || (ctrl && shift && key.toLowerCase() === 'v')) {
             if (navigator.clipboard) {
                 e.preventDefault();
-                navigator.clipboard.readText().then(text => { if (text) this._send(text); }).catch(() => {});
+                navigator.clipboard.readText().then(text => {
+                    if (text) this._send(text);
+                }).catch(() => {
+                    warn('clipboard read failed');
+                });
             }
             return true;
         }

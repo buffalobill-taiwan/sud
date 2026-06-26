@@ -1,4 +1,5 @@
-import { CURSOR_HIDE, CURSOR_SHOW } from './sgr.js';
+import { CURSOR_HIDE, CURSOR_SHOW, isFinalByte } from './sgr.js';
+import { CSI_INTRODUCER } from './constants.js';
 
 export class Typewriter {
     constructor(term) {
@@ -98,11 +99,11 @@ export class Typewriter {
                 const next = text.charCodeAt(i);
                 i++;
 
-                if (next === 0x5B) {
+                if (next === CSI_INTRODUCER) {
                     while (i < text.length) {
                         const c = text.charCodeAt(i);
                         i++;
-                        if (c >= 0x40 && c <= 0x7E) break;
+                        if (isFinalByte(c)) break;
                     }
                 } else if (next === 0x5D || next === 0x50) {
                     while (i < text.length) {

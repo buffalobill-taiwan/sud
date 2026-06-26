@@ -3,7 +3,7 @@ export function startDrag(obj, col, row, x, y) {
     obj._dragOffY = row - y;
 }
 
-export function moveDrag(obj, term, col, row, fromX, fromY, w, h, setPos) {
+export function moveDrag({ obj, term, col, row, fromX, fromY, w, h, setPos }) {
     if (obj._dragOffX === undefined) return;
     const newX = Math.max(0, Math.min(term.cols - w, col - obj._dragOffX));
     const newY = Math.max(0, Math.min(term.rows - h, row - obj._dragOffY));

@@ -5,6 +5,9 @@
  * Emits `send(data)` for DSR responses and similar outbound control sequences.
  */
 
+import { isFinalByte } from './sgr.js';
+import { CSI_INTRODUCER } from './constants.js';
+
 export class Parser {
     constructor(screen, callbacks = {}) {
         this.screen = screen;
@@ -31,7 +34,7 @@ export class Parser {
             if (this._state === 'csi') {
                 this._buf += ch;
                 const code = ch.charCodeAt ? ch.charCodeAt(0) : ch;
-                if (code >= 0x40 && code <= 0x7E) {
+                if (isFinalByte(code)) {
                     this._processCSI(this._buf);
                     this._buf = '';
                     this._state = 'ground';
@@ -91,7 +94,7 @@ export class Parser {
     _processEscape(ch) {
         const screen = this.screen;
         const code = ch.charCodeAt ? ch.charCodeAt(0) : ch;
-        if (code === 0x5B) { this._state = 'csi'; this._buf = ''; return; }
+        if (code === CSI_INTRODUCER) { this._state = 'csi'; this._buf = ''; return; }
         if (code === 0x5D) { this._state = 'osc'; this._oscString = ''; return; }
         if (code === 0x50) { this._state = 'dcs'; return; }
         if (code === 0x58) { this._state = 'sos'; return; }
@@ -115,8 +118,8 @@ export class Parser {
         for (let i = 0; i < buf.length; i++) {
             const ch = buf[i];
             const code = ch.charCodeAt ? ch.charCodeAt(0) : ch;
-            if (code >= 0x40 && code <= 0x7E) {
-                if (n && (n[0] === '?' || n[0] === '>' || n[0] === '!' || n[0] === '<' || n[0] === "'")) {
+            if (isFinalByte(code)) {
+                if (n && "?!><'".includes(n[0])) {
                     privateMarker = n[0];
                     n = n.substring(1);
                 }
@@ -162,8 +165,8 @@ export class Parser {
             case 'm': screen.setSGR(params); break;
             case 's': screen.savedX = screen.curX; screen.savedY = screen.curY; break;
             case 'u': if (screen.savedX >= 0) { screen.curX = screen.savedX; screen.curY = screen.savedY; screen.markRowDirty(screen.curY); } break;
-            case 'h': this._setMode(params); break;
-            case 'l': this._resetMode(params); break;
+            case 'h': break;
+            case 'l': break;
             case 'n': this._deviceStatusReport(p0); break;
             case 'r': {
                 const top = Math.max(0, (params[0] || 1) - 1);
@@ -215,17 +218,4 @@ export class Parser {
         if (p0 === 6) this._send('\x1B[' + (screen.curY + 1) + ';' + (screen.curX + 1) + 'R');
     }
 
-    _setMode(params) {
-        const screen = this.screen;
-        for (const p of params) {
-            if (p === 4) screen.modes.insertMode = true;
-        }
-    }
-
-    _resetMode(params) {
-        const screen = this.screen;
-        for (const p of params) {
-            if (p === 4) screen.modes.insertMode = false;
-        }
-    }
 }

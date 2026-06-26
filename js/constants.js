@@ -1,0 +1,10 @@
+export const DEFAULT_COLS = 80;
+export const DEFAULT_ROWS = 25;
+export const DEFAULT_FG = 7;
+export const DEFAULT_BG = 0;
+export const DEFAULT_DIALOG_WIDTH = 40;
+export const SCROLLBACK_MAX = 2000;
+export const CHAR_WIDTH = 8;
+export const CHAR_HEIGHT = 16;
+export const TAB_WIDTH = 8;
+export const CSI_INTRODUCER = 0x5B;

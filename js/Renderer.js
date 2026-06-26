@@ -1,13 +1,11 @@
-/**
- * Renderer — DOM rendering + cursor management for the terminal.
- */
+import { CHAR_WIDTH, CHAR_HEIGHT } from './constants.js';
 
 export class Renderer {
     constructor(container, screen, opts = {}) {
         this.container = container;
         this.screen = screen;
-        this._baseCharWidth = opts.charWidth || 8;
-        this._baseCharHeight = opts.charHeight || 16;
+        this._baseCharWidth = opts.charWidth || CHAR_WIDTH;
+        this._baseCharHeight = opts.charHeight || CHAR_HEIGHT;
         this.charWidth = this._baseCharWidth;
         this.charHeight = this._baseCharHeight;
         this._scale = 1;
@@ -31,7 +29,6 @@ export class Renderer {
     _initDOM() {
         const cols = this.screen.cols;
         const rows = this.screen.rows;
-
 
         this.cursorEl = document.createElement('div');
         this.cursorEl.id = 'cursor';
@@ -93,6 +90,13 @@ export class Renderer {
         screen.dirtyRows.clear();
     }
 
+    _swapInverse(fg, bg, cell) {
+        if (cell.inverse) {
+            return { fg: bg, bg: fg };
+        }
+        return { fg, bg };
+    }
+
     _renderRow(rowIdx) {
         const dataRow = this._getDataRow(rowIdx);
         const cellRow = this.cellEls[rowIdx];
@@ -123,9 +127,7 @@ export class Renderer {
 
             span.textContent = cell.ch || ' ';
 
-            let fg = cell.fg;
-            let bg = cell.bg;
-            if (cell.inverse) { const t = fg; fg = bg; bg = t; }
+            let { fg, bg } = this._swapInverse(cell.fg, cell.bg, cell);
             if (cell.bold && typeof fg === 'number' && fg < 8) fg += 8;
 
             span.className = this._spanClass(fg, bg, cell.italic, cell.underline, cell.crossedOut, cell.blink, cell.dim);
@@ -220,9 +222,7 @@ export class Renderer {
 
         const cell = screen.getCellAt(screen.curX, screen.curY);
         if (!cell) { this.cursorEl.className = 'hidden'; return; }
-        let fg = cell.fg;
-        let bg = cell.bg;
-        if (cell.inverse) { const t = fg; fg = bg; bg = t; }
+        const { fg, bg } = this._swapInverse(cell.fg, cell.bg, cell);
 
         this.cursorEl.className = 'b' + fg + ' q' + bg;
         this.cursorEl.textContent = cell.ch;

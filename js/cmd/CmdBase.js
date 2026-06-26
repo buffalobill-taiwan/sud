@@ -1,33 +1,7 @@
-/**
- * Abstract base for all shell commands.
- *
- * Subclasses must implement execute(args) and define static getters:
- * - commandName → registration key
- * - help → description shown in `help` output
- * - menu → menu description (or null to hide from menu)
- * - usage → "commandName [--flag VALUE]" for auto --help output
- *
- * Built-in helpers:
- *   error(text)        — print red "Error: text" + newline
- *   parseArgs(args)    — returns { hasHelp, flag(long,short), rest[] }
- *   showHelp()         — prints commandName + help + usage
- *   select(opts)       — 2D grid selection (interactive commands)
- *   prompt(text, cb)   — readLine with Typewriter gating (interactive commands)
- *
- * Promise-based APIs (use from async execute()):
- *   await readLineAsync()     — Promise<string> user input
- *   await selectAsync(opts)   — Promise<{row,col,value}|null>
- *   await waitForPrint()      — resolve when typewriter drains
- *   await showMessage(msg)    — quick ShowDialog, resolves on close
- *   await ask(question)       — quick InputDialog, Promise<string|null>
- *   await confirm(question)   — quick Y/N selection
- */
-
-import { red, bold, yellow, green, CURSOR_SHOW, CURSOR_HIDE } from '../sgr.js';
-import { DialogFrame } from '../CmdFrame.js';
+import { red, bold, yellow, CURSOR_SHOW, CURSOR_HIDE } from '../sgr.js';
 import { ShowDialog } from '../dialog/ShowDialog.js';
 import { InputDialog } from '../dialog/InputDialog.js';
-import { defaultGridMove, displayWidth } from '../select-grid.js';
+import { defaultGridMove, defaultGridRender } from '../select-grid.js';
 
 export class CmdBase {
     constructor(shell) {
@@ -148,43 +122,14 @@ export class CmdBase {
     _onKey(data) {}
 
     select(opts) {
-        let rendered = false;
-        const defaultRender = (r, c, options, term) => {
-            const rows = options.length;
-            let s = '';
-            if (rendered && rows > 1) {
-                s += '\x1B[' + (rows - 1) + 'A';
-            }
-            const numCols = Math.max(...options.map(row => row.length));
-            const colWidths = [];
-            for (let ci = 0; ci < numCols; ci++) {
-                let maxW = 0;
-                for (const row of options) {
-                    if (ci < row.length) {
-                        maxW = Math.max(maxW, displayWidth(row[ci]));
-                    }
-                }
-                colWidths.push(maxW);
-            }
-            for (let ri = 0; ri < rows; ri++) {
-                if (ri > 0) s += '\r\n';
-                s += '\r\x1B[K';
-                for (let ci = 0; ci < options[ri].length; ci++) {
-                    const name = options[ri][ci];
-                    const isSel = ri === r && ci === c;
-                    const prefix = isSel ? bold(green('▶ ')) : '  ';
-                    const padded = name + ' '.repeat(colWidths[ci] - displayWidth(name) + 2);
-                    s += prefix + padded;
-                }
-            }
-            term.write(s);
-        };
+        const renderedRef = { value: false };
+        const render = opts.render || defaultGridRender(renderedRef);
 
         this.closed = false;
         this._selectState = {
             options: opts.options,
             move: opts.move || defaultGridMove,
-            render: opts.render || defaultRender,
+            render,
             onPick: opts.onPick,
             onCancel: opts.onCancel || null,
             term: this.term,
@@ -198,7 +143,7 @@ export class CmdBase {
             this.term.write(CURSOR_HIDE);
             const ss = this._selectState;
             ss.render(ss.selRow, ss.selCol, ss.options, ss.term);
-            rendered = true;
+            renderedRef.value = true;
         });
     }
 
@@ -268,11 +213,7 @@ export class CmdBase {
                 message: msg,
                 onExit: resolve,
             });
-            dlg.open();
-            const frame = new DialogFrame(this.shell, dlg);
-            frame.started = true;
-            this.shell._pushFrame(frame);
-            this.shell._tick();
+            this.shell.pushDialogFrame(dlg);
         });
     }
 
@@ -284,11 +225,7 @@ export class CmdBase {
                 onConfirm: val => resolve(val),
                 onCancel: () => resolve(null),
             });
-            dlg.open();
-            const frame = new DialogFrame(this.shell, dlg);
-            frame.started = true;
-            this.shell._pushFrame(frame);
-            this.shell._tick();
+            this.shell.pushDialogFrame(dlg);
         });
     }
 
@@ -305,5 +242,3 @@ export class CmdBase {
         }
     }
 }
-
-

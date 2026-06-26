@@ -1,9 +1,10 @@
 import { Dialog } from './Dialog.js';
 import { centeredDialogPos } from './position.js';
+import { DEFAULT_DIALOG_WIDTH } from '../constants.js';
 
 export class ShowDialog extends Dialog {
     constructor(term, opts) {
-        super(term, Object.assign({ width: 40, footer: 'ESC to back', title: null }, opts));
+        super(term, Object.assign({ width: DEFAULT_DIALOG_WIDTH, footer: 'ESC to back', title: null }, opts));
         this.message = opts.message || '';
         this._lines = this.message.split('\n');
         const h = Math.max(4, this._lines.length + 4);

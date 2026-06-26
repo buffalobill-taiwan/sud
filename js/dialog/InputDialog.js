@@ -1,10 +1,11 @@
 import { Dialog } from './Dialog.js';
 import { makeCell } from '../sgr.js';
 import { centeredDialogPos } from './position.js';
+import { DEFAULT_DIALOG_WIDTH } from '../constants.js';
 
 export class InputDialog extends Dialog {
     constructor(term, opts) {
-        const width = opts.width || 40;
+        const width = opts.width || DEFAULT_DIALOG_WIDTH;
         const h = 8;
         const pos = centeredDialogPos(term, width, h);
 

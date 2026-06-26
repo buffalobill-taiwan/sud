@@ -302,80 +302,27 @@ unaddressed:
 ## Changes Made This Session
 
 ### Done
-- **Frame stack model (`CmdFrame.js`)**: Replaced `_cmdQueue` + `_executing` + `activeDialog` guard with a unified `_cmdStack`. `SyncCmdFrame` for synchronous/async commands, `DialogFrame` for dialogs. `_processStack()` loop handles the lifecycle (pop done → start → check blocked → finish). `handleInput()` routes via stack top. `_busy` and `_readLinePending` remain as shell-level blocking conditions checked by `SyncCmdFrame.blocked`. Fixed `_requestPrompt()` → `_tick()` in blink/smallblink. Fixed async handler race (art/mbti) via `_asyncPending` flag.
-- **Prompt scheduling unified**: `_checkTypewriterDrain()` renamed to `_schedulePrompt()` with four guards (`_busy`, `activeDialog`, `_readLinePending`, `typewriter.isActive()`). `_pendingPrompt` flag removed — typewriter drain calls `_schedulePrompt()` directly. `_pendingAction` indirection eliminated — menu executes commands directly, calc/quiz open ShowDialog inline. blinks/smallblink/mbti cleanup call `_schedulePrompt()`. Single gate for all prompt timing.
-- **Clock command refactored**: `clock` at shell prompt uses `ClockWidget` overlay instead of `shell.clockMode()` (CSI-based). Widget left-aligned (x=0), no background (bg=0). ClockWidget constructor accepts `opts.bg`. Ctrl+C also triggers `_clockCleanup`.
-- **Menu clock uses ClockWidget**: `ClockDialog` frame renders at z=100; `ClockWidget` registered second (overlay array order → widget processes after dialog → time text wins over spaces). Dialog opens first, widget starts second. Clock centered within dialog (content width 20 − widget width 8 = offset 6), bg=0.
-- **`isCovered` removed entirely**: `StateStack.isCovered()` method deleted. `ShellWidgetManager.redrawAll()` and `ClockWidget` interval no longer check `isCovered` — render order in `_blendOverlays` is the only mechanism for visual layering.
-- **Overlay compositing architecture**: Widgets and dialogs now own their own cell buffers. Renderer blends them over the main buffer at render time via `_blendOverlays()` in `Renderer.js`. No more `saveArea`/`restoreArea` or scroll region protection.
-- **Screen/Parser/Renderer split** (`js/terminal.js` → `Screen.js` + `Parser.js` + `Renderer.js`): Terminal data model, escape parser, and DOM renderer separated into independent files. Terminal stays as thin coordinator (~100 lines).
-- **LineEditor extraction** (`js/LineEditor.js`): Shell line editing (history, tab completion, key dispatch) extracted from `shell.js` into its own class.
-- **WidgetBase buffer rewrite** (`js/cmd/WidgetBase.js`): Now owns `_buffer`, `putc()`, and overlay lifecycle (`_overlay`). `start()`/`stop()` register/unregister overlay on the terminal. No more `_saveBacking`/`_restoreBacking`.
-- **Dialog buffer rewrite** (`js/dialog/Dialog.js`): All rendering now fills `_buffer` via `_writeStr()` (inline SGR→cell attrs) instead of `term.write()` with CSI sequences. `open()`/`close()` manage overlay registration. StateStack simplified to cursor-only (no buffer save/restore).
-- **ShellWidgetManager simplified** (`js/shell.js`): No `_setScrollTop()`, no scrollTop/scrollBottom management. Widgets register overlays independently via WidgetBase.
-- **Per-cell DOM grid** (`js/Renderer.js`): Pre-creates 80×25 `<span>` elements at init (`cellEls[row][col]`). Each render cycle updates only `.textContent`/`.className`/`.style.cssText` on individual spans — no innerHTML string building, no node create/destroy. `_rowToHTML()` removed.
-- **DVD bouncing logo widget** (`js/cmd/widgets/DVDWidget.js`): 7×3 color background block with black "D V D" text, 120ms interval bounce, color change on edge hit. Uses solid fill (bg = color, fg = black for letters) instead of box-drawing border.
-- **Mouse routing for dialogs** (`terminal.js`/`shell.js`/`dialog.js`): `onMouse` callback on Terminal → `shell.handleMouse` → `dialog.handleMouse` → `MenuDialog._onMouse`. Supports hover (update selection), click (select item), wheel (scroll). If callback returns `true`, no escape sequence is sent.
-- **Startup text** changed to `AEIOUÀÈÌÒÙ金木水火土鑫森淼焱垚あいうえおアイウエオ`
-- **Quiz dialog fixes**: `const a` → `let a` (Assignment to constant variable); InputDialog cursor shows inverse space instead of duplicating last character.
-- **Shared SGR module** (`js/sgr.js`): Extracted `defaultAttr()`, `applySGR()`, `makeCell()` from Screen/dialog/WidgetBase into shared file. `Screen.setSGR` loop index bug fixed (extended color params no longer corrupt attr state).
-- **Terminal.dispose()**: Unregisters 11 event listeners + resize handler; stops render loop.
-- **Key handler split**: `_onKeyDown` split into `_handleCopyPaste`, `_handleCtrlLetter`, `_handleFunctionKeys` (main method 121→45 lines).
-- **Encapsulation**: WidgetBase `setPosition(x,y)`/`getPosition()`; drag guards (`_dragOffX === undefined`); dialog drag guards; `WidgetBase.stop()` marks rows dirty before overlay removal.
-- **Clock position preserved**: `ShellWidgetManager.add()` uses `setPosition` preserving `widget._x`; DVDWidget uses `setPosition` in `_tick`.
-- **LineEditor prompText**: Returns `this._prompt` instead of hardcoded `'$ '`.
-- **`readLine` guard**: Warns on duplicate call before overwriting.
-- **rAF resize debounce**: Replaced `setTimeout(80ms)` with `requestAnimationFrame` debounce.
-- **Scrollback indicator**: ` (MORE)` overlay via `.scroll-indicator` CSS class, toggled when `viewOffset > 0`.
-- **Screen.getCellAt**: Encapsulated overlay/buffer cell lookup in Screen. `_renderCursor` now calls `screen.getCellAt(curX, curY)` instead of directly accessing `screen.overlays` and `screen.buffer`.
-- **Inline styles → CSS classes**: Moved redundant `container.position/top/left` (already in `#screen` CSS); scroll indicator static props moved to `.scroll-indicator` CSS, `display` toggle uses `classList.toggle('visible')`; cursor `text-align` and `font-family` moved to `#cursor` CSS; copy textarea uses `.clip-helper` class. Reduced inline style assignments from 30 to 23.
-- **XTERM_COLORS removed**: Replaced 46-line array with CSS classes `.b<N>`/`.q<N>` directly — cursor colors set via `className = 'b' + fg + ' q' + bg`. No color hex lookup table or algorithmic function in JS anymore.
-- **`select()` 2D options**: `select()` accepts 2D `options[row][col]` array, default `_defaultGridMove` (↑↓←→ no wrap, auto clamp col) and `_defaultGridRender` (column-aligned `▶` + green bold). `move`/`render` optional overrides. `onPick(row, col, value)`. `ask()` removed.
-- **MbtiCmd/AstrologyCmd simplified**: Both use default move/render from `select()`. MbtiCmd passes `[[aText, bText]]`, AstrologyCmd passes `3×4` grid. Custom render/move removed.
-- **AstrologyCmd registered**: 12-zodiac 4×3 grid selection via `select()`, seed-based fortune generation (mulberry32, dayOfYear + signIdx), 5 categories × 5 score levels × 3 descriptions.
-- **Removed neofetch, uname, whoami**: Three fileless commands removed — no filesystem dependency to justify them, and their output was trivial.
-- **InteractiveCmd merged into CmdBase**: All interactive methods (`select()`, `prompt()`, `open()/close()`, `handleKey()`) moved into `CmdBase`. `InteractiveCmd.js` deleted. `mbti.js`/`astrology.js` now import `CmdBase` directly.
-
-### Done
-- **Cursor hide/show constants** (`js/sgr.js`): `CURSOR_HIDE`/`CURSOR_SHOW` — replaced magic `'\x1B[?25l'`/`'\x1B[?25h'` strings in 5 files (typewriter, CmdBase, Dialog, StateStack, terminal).
-- **`tokenize()` extracted** (`js/tokenize.js`): 49-line shell tokenizer extracted from `shell.js` into its own module.
-- **Blink/SmallBlink merged** (`js/cmd/flash.js`): Two 80%+ identical flash commands merged into one `flash` command with `--border` flag. Old `blink`/`smallblink` files deleted.
-- **`exit` → `goodbye`** (`js/cmd/goodbye.js`): Renamed since the command doesn't actually exit; misleading name fixed.
-- **`Function()` removed from calc** (`js/calc-expr.js`): `Function('"use strict"; return (...)')()` replaced by safe recursive-descent expression evaluator (`safeEval`). Same fix applied to `shell._openCalcDialog`.
-- **`overlay.js` + `time.js` inlined** (`js/sgr.js`): Two 4-5 line micro-modules merged into `sgr.js` as `OverlayZ` and `formatTime`.
-- **`select-grid.js` extracted** (`js/select-grid.js`): `_defaultGridMove` and `_displayWidth` moved from `CmdBase.js` into their own module, reducing `CmdBase.js` from 337 to 309 lines.
-- **Parser per-state handlers** (`js/Parser.js`): `_feedGround()`, `_feedOSC()`, `_feedStringTerminator()` extracted — nesting depth reduced from 7 to 3 levels.
-- **InputDialog cursor derived** (`js/dialog/InputDialog.js`): Hardcoded `cx=4, cy=4` replaced by `_inputPrefix.length` + `_inputRow` — no silent breakage on layout changes.
-- **MenuDialog double-assign fixed** (`js/dialog/MenuDialog.js`): `x`/`y` set once in `super()` call instead of being overridden after construction.
-- **DVDWidget._clear() removed** (`js/cmd/widgets/DVDWidget.js`): `_clear()` was a duplicate of `WidgetBase.stop()`'s dirty-row marking.
-- **LineEditor._promptText removed** (`js/LineEditor.js`): Unnecessary getter replaced with direct `this._prompt` access.
-- **Stale comments fixed**: Removed misleading `// ── Public helpers ──`/`// ── Input / events ──`/`// ── Internal: buffer init / cells ──` labels; updated `Renderer.js` JSDoc.
+- **Magic numbers → constants** (`js/constants.js`): Added `CHAR_WIDTH=8`, `CHAR_HEIGHT=16`, `TAB_WIDTH=8`, `CSI_INTRODUCER=0x5B`. All files updated to reference these instead of literals.
+- **`isFinalByte(code)` extracted** (`js/sgr.js`): Shared range check `code >= 0x40 && code <= 0x7E` — replaces 4 sites across Parser.js, typewriter.js, Dialog.js.
+- **`warn(msg)` extracted** (`js/sgr.js`): Replaces `typeof console !== 'undefined'` guard in 3 sites (terminal.js ×2, shell.js ×1).
+- **`createEmptyBuffer(w, h)` extracted** (`js/sgr.js`): Deduplicates identical buffer-init logic in Dialog._initBuffer and WidgetBase._createEmptyBuffer.
+- **`DEFAULT_DIALOG_WIDTH` usage fixed**: InputDialog.js and ShowDialog.js now import and use the constant instead of hardcoded `40`.
+- **Dead code removed**: `_setMode`/`_resetMode` (insertMode, never read) removed from Parser.js; unreachable `Dialog._onKey` base method removed; `DialogFrame` dead import removed from CmdBase.js.
+- **Private marker cleanup** (`Parser.js`): `n[0] === '?' || n[0] === '>' || ...` replaced with `"?!><'".includes(n[0])`.
+- **`_saveScroll` renamed** (`Screen.js`): To `_normalScroll` for consistency with `_normal*` naming pattern.
+- **`_maxViewOffset` made public** (`Screen.js`): Renamed to `maxViewOffset()` — Terminal accesses it without violating encapsulation.
+- **`String()` removed** (`calc.js`): Unnecessary wrapper around `result` (already a number).
+- **Null guard added** (`write.js`): `buf[y]` null check before `buf[y].length`.
+- **Renderer defaults** (`Renderer.js`): `charWidth`/`charHeight` fallbacks now reference `CHAR_WIDTH`/`CHAR_HEIGHT` from constants.js.
 
 ### Removed
-- `_cmdQueue`, `_executing`, `activeDialog` — replaced by `_cmdStack` / `CmdFrame`
-- `saveArea()`, `restoreArea()`, `saveCursor()`, `restoreCursor()` — no longer needed
-- `ask()` — unused dead code, removed
-- `neofetch`, `uname`, `whoami` — three fileless commands removed
-- `InteractiveCmd.js` — merged into `CmdBase.js`
-- `CmdBase.open()` — replaced by `select()` auto-setting `cmd.closed=false`;
-  keyboard routed via `SyncCmdFrame.handleInput()` directly, no DialogFrame needed
-- `WidgetBase._saveBacking()`, `_restoreBacking()`
-- `ShellWidgetManager._setScrollTop()`
-- `shell.clockMode()` — replaced by ClockWidget-based ClockCmd.execute()
-- `StateStack.isCovered()` — render order is the only visual layering mechanism
-- `formatTime` import from `shell.js` and `dialog.js` — no longer used
-- `isCovered` check from `ShellWidgetManager.redrawAll()` and `ClockWidget` interval
-- `Renderer._rowToHTML()` — replaced by per-cell span rendering
-- `Renderer.js` redundant `container.style.position/top/left` — already in `#screen` CSS
-- `Renderer.js` scroll-indicator `style.cssText` — replaced by `.scroll-indicator` CSS class
-- `Renderer.js` cursor `textAlign`/`fontFamily` inline — moved to `#cursor` CSS
-- `XTERM_COLORS` array from `Screen.js` — CSS classes `.q<N>`/`.b<N>` handle all color rendering
-- `colToHex()` from `Renderer.js` — cursor colors use CSS classes directly, no algorithmic lookup needed
-- `Renderer.js` cursor `style.backgroundColor`/`style.color` inline — replaced by `className = 'b' + fg + ' q' + bg`
-- `terminal.js` copy textarea `style.position`/`style.opacity` inline — replaced by `.clip-helper` CSS class
-- `overlay.js` + `time.js` — merged into `sgr.js`
-- `blink.js`, `smallblink.js` — merged into `flash.js`
-- `exit.js` — renamed to `goodbye.js`
+- `DialogFrame` import from `CmdBase.js`
+- `_onKey` base method from `Dialog.js` (unreachable — subclasses override completely)
+- `_setMode`/`_resetMode` from `Parser.js` (only handled `insertMode` which was never read)
+- `_createEmptyBuffer` from `WidgetBase.js` (replaced by shared `createEmptyBuffer` in sgr.js)
+- `_saveScroll` property in `Screen.js` (renamed to `_normalScroll`)
+- `_maxViewOffset` private method (renamed to public `maxViewOffset`)
+- Old `typeof console !== 'undefined'` guards in terminal.js ×2, shell.js ×1
 
 ## Command Architecture
 

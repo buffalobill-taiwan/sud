@@ -2,8 +2,8 @@ import { StateStack, MenuDialog, InputDialog, ShowDialog } from './dialog/index.
 import { Typewriter } from './typewriter.js';
 import { LineEditor } from './LineEditor.js';
 import * as cmdModule from './cmd/index.js';
-import { CmdFrame, SyncCmdFrame, DialogFrame } from './CmdFrame.js';
-import { bold, green, yellow, gray, red, white } from './sgr.js';
+import { SyncCmdFrame, DialogFrame } from './CmdFrame.js';
+import { bold, green, yellow, gray, red, white, warn } from './sgr.js';
 import { tokenize } from './tokenize.js';
 import { safeEval } from './calc-expr.js';
 
@@ -41,6 +41,25 @@ export class DemoShell {
         this._savedPositions = {};
 
         this.start();
+    }
+
+    get busy() { return this._busy; }
+
+    holdBusy() { this._busy = true; }
+
+    releaseBusy() {
+        this._busy = false;
+        this._tick();
+    }
+
+    get abortGeneration() { return this._abortGeneration; }
+
+    pushDialogFrame(dlg) {
+        dlg.open();
+        const frame = new DialogFrame(this, dlg);
+        frame.started = true;
+        this._pushFrame(frame);
+        this._tick();
     }
 
     _registerCommands() {
@@ -89,7 +108,7 @@ export class DemoShell {
 
     readLine(callback) {
         if (this._readLinePending) {
-            if (typeof console !== 'undefined') console.warn('readLine called while another readLine is pending — overwriting');
+            warn('readLine called while another readLine is pending — overwriting');
         }
         this._readLinePending = callback;
         this._readLineBuffer = '';
@@ -300,18 +319,23 @@ export class DemoShell {
             y: pos.y,
             savePos: (x, y) => { this._savedPositions[key] = { x, y }; },
         });
-        dlg.open();
-        const frame = new DialogFrame(this, dlg);
-        frame.started = true;
-        this._pushFrame(frame);
-        this._tick();
+        this.pushDialogFrame(dlg);
         return dlg;
+    }
+
+    _showResultDialog(msg) {
+        setTimeout(() => {
+            this._createDialog(ShowDialog, 'show', {
+                message: msg,
+                onExit: () => {},
+            });
+        }, 0);
     }
 
     _openCalcDialog(menuDlg) {
         this._createDialog(InputDialog, 'calc', {
-            title: '請輸入算式',
-            prompt: '算式：',
+            title: '\u8ACB\u8F38\u5165\u7B97\u5F0F',
+            prompt: '\u7B97\u5F0F\uFF1A',
             footer: 'Enter Confirm  ESC Back',
             onConfirm: (expr) => {
                 if (!expr.trim()) return;
@@ -321,12 +345,7 @@ export class DemoShell {
                 } catch (e) {
                     msg = red('Error:') + ' ' + (e.message || 'invalid expression');
                 }
-                setTimeout(() => {
-                    this._createDialog(ShowDialog, 'show', {
-                        message: msg,
-                        onExit: () => {},
-                    });
-                }, 0);
+                this._showResultDialog(msg);
             },
             onCancel: () => {},
         });
@@ -353,12 +372,7 @@ export class DemoShell {
                 } else {
                     msg = bold(red('\u2717 Wrong!')) + '  Answer: ' + bold(white('' + answer));
                 }
-                setTimeout(() => {
-                    this._createDialog(ShowDialog, 'show', {
-                        message: msg,
-                        onExit: () => {},
-                    });
-                }, 0);
+                this._showResultDialog(msg);
             },
             onCancel: () => {},
         });

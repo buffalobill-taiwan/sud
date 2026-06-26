@@ -1,13 +1,14 @@
 import { isWide } from '../unicode-width.js';
 import { _writeStr } from './write.js';
 import { startDrag, moveDrag, endDrag, markDirtyRows } from '../drag.js';
-import { OverlayZ, CURSOR_HIDE, CURSOR_SHOW } from '../sgr.js';
+import { OverlayZ, CURSOR_HIDE, CURSOR_SHOW, isFinalByte, createEmptyBuffer } from '../sgr.js';
+import { DEFAULT_DIALOG_WIDTH, CSI_INTRODUCER } from '../constants.js';
 
 export class Dialog {
     constructor(term, opts) {
         this.term = term;
         this.stack = opts.stack || null;
-        this.width = opts.width || 40;
+        this.width = opts.width || DEFAULT_DIALOG_WIDTH;
         this.title = opts.title || '';
         this.footer = opts.footer || '';
         this.closed = false;
@@ -80,8 +81,12 @@ export class Dialog {
     }
 
     moveDrag(col, row) {
-        moveDrag(this, this.term, col, row, this.x, this.y, this.width, this.h,
-            (nx, ny) => { this.x = nx; this.y = ny; });
+        moveDrag({
+            obj: this, term: this.term, col, row,
+            fromX: this.x, fromY: this.y,
+            w: this.width, h: this.h,
+            setPos: (nx, ny) => { this.x = nx; this.y = ny; },
+        });
     }
 
     endDrag() {
@@ -100,8 +105,8 @@ export class Dialog {
             const code = ch.charCodeAt(0);
             if (code === 0x1B) { inEsc = true; continue; }
             if (inEsc) {
-                if (code === 0x5B) continue;
-                if (code >= 0x40 && code <= 0x7E) inEsc = false;
+                if (code === CSI_INTRODUCER) continue;
+                if (isFinalByte(code)) inEsc = false;
                 continue;
             }
             w += isWide(ch) ? 2 : 1;
@@ -145,20 +150,7 @@ export class Dialog {
 
     _renderContent() {}
 
-    _onKey(data) {
-        if (data.length === 1 && (data.charCodeAt(0) === 0x1B || data.charCodeAt(0) === 0x03)) {
-            return 'close';
-        }
-    }
-
     _initBuffer() {
-        this._buffer = [];
-        for (let r = 0; r < this.h; r++) {
-            const row = new Array(this.width);
-            for (let c = 0; c < this.width; c++) {
-                row[c] = null;
-            }
-            this._buffer.push(row);
-        }
+        this._buffer = createEmptyBuffer(this.width, this.h);
     }
 }

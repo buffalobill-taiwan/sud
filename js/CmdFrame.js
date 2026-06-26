@@ -56,7 +56,7 @@ export class SyncCmdFrame extends CmdFrame {
 
     get blocked() {
         if (!this.started || this.done) return false;
-        return (this.cmd && !this.cmd.closed) || this._asyncPending || this.shell.typewriter.isActive() || this.shell._busy;
+        return (this.cmd && !this.cmd.closed) || this._asyncPending || this.shell.typewriter.isActive() || this.shell.busy;
     }
 }
 

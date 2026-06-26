@@ -1,9 +1,7 @@
-/**
- * Shared SGR parsing, cell construction, and terminal constants.
- */
+import { DEFAULT_FG, DEFAULT_BG } from './constants.js';
 
 export function defaultAttr() {
-    return { fg: 7, bg: 0, bold: false, dim: false, italic: false, underline: false, blink: false, inverse: false, conceal: false, crossedOut: false };
+    return { fg: DEFAULT_FG, bg: DEFAULT_BG, bold: false, dim: false, italic: false, underline: false, blink: false, inverse: false, conceal: false, crossedOut: false };
 }
 
 export function applySGR(attr, params) {
@@ -27,19 +25,13 @@ export function applySGR(attr, params) {
         else if (p === 28) attr.conceal = false;
         else if (p === 29) attr.crossedOut = false;
         else if (p >= 30 && p <= 37) attr.fg = p - 30;
-        else if (p === 39) attr.fg = 7;
+        else if (p === 39) attr.fg = DEFAULT_FG;
         else if (p >= 40 && p <= 47) attr.bg = p - 40;
-        else if (p === 49) attr.bg = 0;
+        else if (p === 49) attr.bg = DEFAULT_BG;
         else if (p >= 90 && p <= 97) attr.fg = p - 90 + 8;
         else if (p >= 100 && p <= 107) attr.bg = p - 100 + 8;
     }
 }
-
-// ── SGR helper — convenient text styling ──
-// Usage:
-//   green`success\n`          tagged template
-//   green('success')          function call
-//   bold(red('error'))        chaining (double \x1B[0m, harmless)
 
 function _sgrWrap(params, text) {
     return '\x1B[' + params.join(';') + 'm' + text + '\x1B[0m';
@@ -71,8 +63,6 @@ export const gray = _sgrStyle([90]);
 
 export function sgr(...params) { return _sgrStyle(params); }
 
-// ── Terminal escape constants ──
-
 export const CURSOR_HIDE = '\x1B[?25l';
 export const CURSOR_SHOW = '\x1B[?25h';
 
@@ -102,4 +92,22 @@ export function makeCell(ch, attr, width) {
         crossedOut: attr.crossedOut,
         width: width || 1,
     };
+}
+
+export function isFinalByte(code) {
+    return code >= 0x40 && code <= 0x7E;
+}
+
+export function warn(msg) {
+    if (typeof console !== 'undefined') console.warn(msg);
+}
+
+export function createEmptyBuffer(w, h) {
+    const buf = [];
+    for (let r = 0; r < h; r++) {
+        const row = new Array(w);
+        for (let c = 0; c < w; c++) row[c] = null;
+        buf.push(row);
+    }
+    return buf;
 }

@@ -2,7 +2,7 @@ import { CmdBase } from './CmdBase.js';
 
 export class Flash extends CmdBase {
     execute(args) {
-        this._flashGen = this.shell._abortGeneration;
+        this._flashGen = this.shell.abortGeneration;
         const p = this.parseArgs(args);
         const border = p.flag('--border', '-b');
         const count = p.rest.length > 0 ? parseInt(p.rest[0], 10) : 1;
@@ -29,7 +29,7 @@ export class Flash extends CmdBase {
             el.style.borderLeftWidth = cw + 'px';
             el.style.borderRightWidth = cw + 'px';
 
-            this.shell._busy = true;
+            this.shell.holdBusy();
             this._flash(el, count);
         } else {
             const wrapper = document.getElementById('terminal-wrapper');
@@ -42,22 +42,21 @@ export class Flash extends CmdBase {
                 wrapper.appendChild(el);
             }
 
-            this.shell._busy = true;
+            this.shell.holdBusy();
             this._flash(el, count);
         }
     }
 
     _flash(el, remaining) {
-        if (this._flashGen !== this.shell._abortGeneration) return;
+        if (this._flashGen !== this.shell.abortGeneration) return;
         el.classList.add('active');
         setTimeout(() => {
-            if (this._flashGen !== this.shell._abortGeneration) return;
+            if (this._flashGen !== this.shell.abortGeneration) return;
             el.classList.remove('active');
             if (remaining > 1) {
                 setTimeout(() => this._flash(el, remaining - 1), 100);
             } else {
-                this.shell._busy = false;
-                this.shell._tick();
+                this.shell.releaseBusy();
             }
         }, 60);
     }

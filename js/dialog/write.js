@@ -26,7 +26,7 @@ export function _writeStr(buf, y, x, str, maxX) {
             }
             continue;
         }
-        if (cx >= (maxX || buf[y].length)) break;
+        if (!buf[y] || cx >= (maxX || buf[y].length)) break;
         const w = isWide(str[i]) ? 2 : 1;
         if (cx + w > (maxX || buf[y].length)) break;
         buf[y][cx] = makeCell(str[i], attr, w);

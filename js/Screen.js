@@ -1,19 +1,12 @@
-/**
- * Screen — terminal buffer data model.
- *
- * Owns the cell buffer, cursor state, scroll regions, SGR attributes,
- * scrollback, alternate buffer, and dirty-row tracking.
- * No DOM, no escape parsing — pure data.
- */
-
 import { defaultAttr, applySGR, makeCell } from './sgr.js';
 import { isWide } from './unicode-width.js';
+import { DEFAULT_FG, DEFAULT_BG, SCROLLBACK_MAX, TAB_WIDTH } from './constants.js';
 
 export class Screen {
     constructor(cols, rows) {
         this.cols = cols;
         this.rows = rows;
-        this.scrollbackSize = 2000;
+        this.scrollbackSize = SCROLLBACK_MAX;
 
         this.buffer = [];
         this.scrollback = [];
@@ -44,7 +37,7 @@ export class Screen {
         this._normalCurX = 0;
         this._normalCurY = 0;
         this._normalViewOffset = 0;
-        this._saveScroll = null;
+        this._normalScroll = null;
 
         this._initBuffer();
     }
@@ -126,7 +119,7 @@ export class Screen {
     }
 
     tab() {
-        const next = (this.curX + 8) & ~7;
+        const next = (this.curX + TAB_WIDTH) & ~(TAB_WIDTH - 1);
         this.curX = Math.min(this.cols - 1, next);
     }
 
@@ -211,7 +204,7 @@ export class Screen {
     }
 
     scrollbackUp(n) {
-        this.viewOffset = Math.min(this.viewOffset + n, this._maxViewOffset());
+        this.viewOffset = Math.min(this.viewOffset + n, this.maxViewOffset());
         this.markAllDirty();
     }
 
@@ -225,7 +218,7 @@ export class Screen {
         this._normalCurX = this.curX;
         this._normalCurY = this.curY;
         this._normalViewOffset = this.viewOffset;
-        this._saveScroll = { top: this.scrollTop, bottom: this.scrollBottom };
+        this._normalScroll = { top: this.scrollTop, bottom: this.scrollBottom };
 
         this.buffer = [];
         for (let i = 0; i < this.rows; i++) this.buffer.push(this._emptyRow());
@@ -243,9 +236,9 @@ export class Screen {
         this.curX = this._normalCurX || 0;
         this.curY = this._normalCurY || 0;
         this.viewOffset = this._normalViewOffset || 0;
-        if (this._saveScroll) {
-            this.scrollTop = this._saveScroll.top;
-            this.scrollBottom = this._saveScroll.bottom;
+        if (this._normalScroll) {
+            this.scrollTop = this._normalScroll.top;
+            this.scrollBottom = this._normalScroll.bottom;
         }
         this._normalLines = null;
         this.markAllDirty();
@@ -284,7 +277,7 @@ export class Screen {
         if (!this._cachedEmptyCell) {
             this._cachedEmptyCell = makeCell(' ', defaultAttr(), 1);
         }
-        if (ch === ' ' && this.attr.fg === 7 && this.attr.bg === 0 &&
+        if (ch === ' ' && this.attr.fg === DEFAULT_FG && this.attr.bg === DEFAULT_BG &&
             !this.attr.bold && !this.attr.dim && !this.attr.italic &&
             !this.attr.underline && !this.attr.blink && !this.attr.inverse &&
             !this.attr.conceal && !this.attr.crossedOut) {
@@ -301,6 +294,13 @@ export class Screen {
         return row;
     }
 
+    _clearRows(from, to) {
+        for (let r = from; r <= to; r++) {
+            this.buffer[r] = this._emptyRow();
+            this.markRowDirty(r);
+        }
+    }
+
     _scrollUp(n) {
         for (let i = 0; i < n; i++) {
             if (this.scrollTop === 0) {
@@ -314,7 +314,7 @@ export class Screen {
             }
             this.buffer[this.scrollBottom] = this._emptyRow();
         }
-        if (this.viewOffset > 0) this.viewOffset = Math.min(this.viewOffset, this._maxViewOffset());
+        if (this.viewOffset > 0) this.viewOffset = Math.min(this.viewOffset, this.maxViewOffset());
         this.markAllDirty();
     }
 
@@ -331,27 +331,15 @@ export class Screen {
     eraseDisplay(mode) {
         if (mode === 0) {
             this.eraseLine(0);
-            for (let r = this.curY + 1; r < this.rows; r++) {
-                this.buffer[r] = this._emptyRow();
-                this.markRowDirty(r);
-            }
+            this._clearRows(this.curY + 1, this.rows - 1);
         } else if (mode === 1) {
-            for (let r = 0; r < this.curY; r++) {
-                this.buffer[r] = this._emptyRow();
-                this.markRowDirty(r);
-            }
+            this._clearRows(0, this.curY - 1);
             this.eraseLine(1);
         } else if (mode === 2) {
-            for (let r = 0; r < this.rows; r++) {
-                this.buffer[r] = this._emptyRow();
-                this.markRowDirty(r);
-            }
+            this._clearRows(0, this.rows - 1);
         } else if (mode === 3) {
             this.scrollback = [];
-            for (let r = 0; r < this.rows; r++) {
-                this.buffer[r] = this._emptyRow();
-                this.markRowDirty(r);
-            }
+            this._clearRows(0, this.rows - 1);
         }
     }
 
@@ -447,7 +435,7 @@ export class Screen {
         return i;
     }
 
-    _maxViewOffset() {
+    maxViewOffset() {
         return Math.min(this.scrollback.length, this.scrollbackSize);
     }
 }

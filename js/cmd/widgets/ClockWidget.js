@@ -4,8 +4,8 @@ import { formatTime } from '../../sgr.js';
 export class ClockWidget extends WidgetBase {
     constructor(shell, opts = {}) {
         super(shell);
-        this._x = shell.term.cols - 8;
         this._w = 8;
+        this._x = shell.term.cols - this._w;
         this._h = 1;
         this._bg = opts.bg != null ? opts.bg : 4;
         this._intervalId = null;

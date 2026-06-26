@@ -1,4 +1,4 @@
-import { makeCell, OverlayZ } from '../sgr.js';
+import { makeCell, defaultAttr, OverlayZ, createEmptyBuffer } from '../sgr.js';
 import { startDrag, moveDrag, endDrag, markDirtyRows } from '../drag.js';
 
 export class WidgetBase {
@@ -14,7 +14,7 @@ export class WidgetBase {
     }
 
     start() {
-        this._buffer = this._createEmptyBuffer();
+        this._buffer = createEmptyBuffer(this._w, this._h);
         this._overlay = {
             y: this._y,
             x: this._x,
@@ -71,8 +71,12 @@ export class WidgetBase {
     }
 
     moveDrag(col, row) {
-        moveDrag(this, this.term, col, row, this._x, this._y, this._w, this._h,
-            (nx, ny) => { this._x = nx; this._y = ny; });
+        moveDrag({
+            obj: this, term: this.term, col, row,
+            fromX: this._x, fromY: this._y,
+            w: this._w, h: this._h,
+            setPos: (nx, ny) => { this._x = nx; this._y = ny; },
+        });
     }
 
     _markDirty() {
@@ -85,9 +89,10 @@ export class WidgetBase {
 
     putc(x, y, ch, fg, bg, attrs) {
         if (y < 0 || y >= this._h || x < 0 || x >= this._w) return;
+        const def = defaultAttr();
         const attr = {
-            fg: fg != null ? fg : 7,
-            bg: bg != null ? bg : 0,
+            fg: fg != null ? fg : def.fg,
+            bg: bg != null ? bg : def.bg,
             bold: attrs && attrs.bold || false,
             dim: attrs && attrs.dim || false,
             italic: attrs && attrs.italic || false,
@@ -101,15 +106,4 @@ export class WidgetBase {
         this.term.markRowDirty(this._y + y);
     }
 
-    _createEmptyBuffer() {
-        const buf = [];
-        for (let r = 0; r < this._h; r++) {
-            const row = new Array(this._w);
-            for (let c = 0; c < this._w; c++) {
-                row[c] = null;
-            }
-            buf.push(row);
-        }
-        return buf;
-    }
 }

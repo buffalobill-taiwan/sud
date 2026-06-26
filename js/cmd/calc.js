@@ -9,7 +9,7 @@ export class Calc extends CmdBase {
         if (!expr) return this.error('no expression provided');
         try {
             const result = safeEval(expr);
-            this.print(String(result) + '\n');
+            this.print(result + '\n');
         } catch (e) {
             this.error('invalid expression');
         }
