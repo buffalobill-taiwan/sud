@@ -27,7 +27,7 @@ export class MenuDialog extends Dialog {
             if (idx < this.items.length) {
                 this._drawItem(idx, r);
             } else {
-                _writeStr(this._buffer, r, 0, '\u2502' + ' '.repeat(this.width - 3));
+                _writeStr(this._buffer, r, 0, '\│' + ' '.repeat(this.width - 3));
             }
         }
         this._drawScrollBar();
@@ -42,7 +42,7 @@ export class MenuDialog extends Dialog {
         const bufW = this._bufWidth(content);
         const pad = contentWidth - bufW;
 
-        let s = '\u2502';
+        let s = '\│';
         if (sel) s += '\x1B[7m\x1B[1m';
         s += content + ' '.repeat(Math.max(0, pad));
         if (sel) s += '\x1B[0m';
@@ -58,7 +58,7 @@ export class MenuDialog extends Dialog {
 
         if (total <= visible) {
             for (let i = 0; i < visible; i++) {
-                _writeStr(this._buffer, startRow + i, col, ' \u2502', this.width);
+                _writeStr(this._buffer, startRow + i, col, ' \│', this.width);
             }
             return;
         }
@@ -69,11 +69,11 @@ export class MenuDialog extends Dialog {
         for (let i = 0; i < visible; i++) {
             const idx = offset + i;
             if (idx >= total) {
-                _writeStr(this._buffer, startRow + i, col, ' \u2502', this.width);
+                _writeStr(this._buffer, startRow + i, col, ' \│', this.width);
                 continue;
             }
-            const ch = (i === thumbRow) ? '\u2588' : '\u2591';
-            _writeStr(this._buffer, startRow + i, col, ch + '\u2502', this.width);
+            const ch = (i === thumbRow) ? '\█' : '\░';
+            _writeStr(this._buffer, startRow + i, col, ch + '\│', this.width);
         }
     }
 

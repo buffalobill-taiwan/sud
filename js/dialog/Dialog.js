@@ -109,29 +109,29 @@ export class Dialog {
         const pad = Math.max(0, W - 2 - this._bufWidth(content));
         const leftPad = Math.floor(pad / 2);
         const rightPad = Math.ceil(pad / 2);
-        _writeStr(this._buffer, row, 0, '\u2502' + ' '.repeat(leftPad) + content + ' '.repeat(rightPad) + '\u2502', W);
+        _writeStr(this._buffer, row, 0, '\│' + ' '.repeat(leftPad) + content + ' '.repeat(rightPad) + '\│', W);
     }
 
     _leftRow(row, content) {
         const W = this.width;
         const pad = Math.max(0, W - 2 - this._bufWidth(content));
-        _writeStr(this._buffer, row, 0, '\u2502' + content + ' '.repeat(pad) + '\u2502', W);
+        _writeStr(this._buffer, row, 0, '\│' + content + ' '.repeat(pad) + '\│', W);
     }
 
     _drawFrame() {
         const W = this.width;
-        const H = '\u2500';
+        const H = '\─';
 
-        this._t(0, '\u250C' + H.repeat(W - 2) + '\u2510');
+        this._t(0, '\┌' + H.repeat(W - 2) + '\┐');
 
         if (this.title) {
             this._centerRow(1, ' \x1B[1m' + this.title + '\x1B[22m ');
-            this._t(2, '\u251C' + H.repeat(W - 2) + '\u2524');
+            this._t(2, '\├' + H.repeat(W - 2) + '\┤');
         }
 
-        this._t(this.h - 3, '\u251C' + H.repeat(W - 2) + '\u2524');
+        this._t(this.h - 3, '\├' + H.repeat(W - 2) + '\┤');
         this._centerRow(this.h - 2, ' ' + this.footer + ' ');
-        this._t(this.h - 1, '\u2514' + H.repeat(W - 2) + '\u2518');
+        this._t(this.h - 1, '\└' + H.repeat(W - 2) + '\┘');
     }
 
     _renderContent() {}

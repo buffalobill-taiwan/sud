@@ -55,7 +55,7 @@ export function defaultGridRender(renderedRef) {
             for (let ci = 0; ci < options[ri].length; ci++) {
                 const name = options[ri][ci];
                 const isSel = ri === r && ci === c;
-                const prefix = isSel ? bold(green('\u25B6 ')) : '  ';
+                const prefix = isSel ? bold(green('\▶ ')) : '  ';
                 const padded = name + ' '.repeat(colWidths[ci] - displayWidth(name) + 2);
                 s += prefix + padded;
             }
