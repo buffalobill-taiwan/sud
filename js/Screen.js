@@ -6,7 +6,8 @@
  * No DOM, no escape parsing — pure data.
  */
 
-import { defaultAttr, applySGR, makeCell, isWide } from './sgr.js';
+import { defaultAttr, applySGR, makeCell } from './sgr.js';
+import { isWide } from './unicode-width.js';
 
 export class Screen {
     constructor(cols, rows) {
@@ -284,6 +285,15 @@ export class Screen {
     }
 
     _makeCell(ch) {
+        if (!this._cachedEmptyCell) {
+            this._cachedEmptyCell = makeCell(' ', defaultAttr(), 1);
+        }
+        if (ch === ' ' && this.attr.fg === 7 && this.attr.bg === 0 &&
+            !this.attr.bold && !this.attr.dim && !this.attr.italic &&
+            !this.attr.underline && !this.attr.blink && !this.attr.inverse &&
+            !this.attr.conceal && !this.attr.crossedOut) {
+            return this._cachedEmptyCell;
+        }
         return makeCell(ch, this.attr, this.isWide(ch) ? 2 : 1);
     }
 

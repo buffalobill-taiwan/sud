@@ -1,17 +1,18 @@
-import { Dialog, _writeStr } from './Dialog.js';
+import { Dialog } from './Dialog.js';
+import { _writeStr } from './write.js';
+import { centeredDialogPos } from './position.js';
 
 export class MenuDialog extends Dialog {
     constructor(term, items, opts) {
         const width = opts.width || 44;
         const visibleCount = opts.visibleCount || 5;
         const h = visibleCount + 6;
-        const x = Math.floor((term.cols - width) / 2);
-        const y = Math.floor((term.rows - h) / 2);
+        const pos = centeredDialogPos(term, width, h);
 
         super(term, { ...opts, width });
 
-        this.x = opts.x != null ? opts.x : x;
-        this.y = opts.y != null ? opts.y : Math.max(0, y - 1);
+        this.x = opts.x != null ? opts.x : pos.x;
+        this.y = opts.y != null ? opts.y : Math.max(0, pos.y - 1);
         this.h = h;
         this.items = items;
         this.visibleCount = visibleCount;

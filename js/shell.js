@@ -277,9 +277,9 @@ export class DemoShell {
 
         if (top) {
             if (top.handleInput) {
-                top.handleInput(data);
+                const handled = top.handleInput(data);
                 if (top.done) this._tick();
-                return;
+                if (handled) return;
             }
             if (this._readLinePending) {
                 this._handleReadLineInput(data);

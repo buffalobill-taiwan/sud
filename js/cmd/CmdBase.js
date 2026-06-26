@@ -122,7 +122,8 @@ export class CmdBase {
     }
 
     _handleKey(data) {
-        if (data.charCodeAt(0) === 0x03) {
+        const code = typeof data === 'string' ? data.charCodeAt(0) : data;
+        if (code === 0x03) {
             this._selectState = null;
             if (this.shell.typewriter.isActive()) {
                 this.shell.typewriter.dispose();
@@ -202,12 +203,13 @@ export class CmdBase {
 
     _handleSelectKey(data) {
         const ss = this._selectState;
-        if (data.length === 1 && data.charCodeAt(0) === 0x1B) {
+        const isStr = typeof data === 'string';
+        const code = isStr ? data.charCodeAt(0) : data;
+        if (isStr && data.length === 1 && code === 0x1B) {
             this._selectState = null;
             (ss.onCancel || this.onCancel).call(this);
             return;
         }
-        const code = data.charCodeAt(0);
         if (code === 0x0D || code === 0x0A) {
             this._selectState = null;
             const value = ss.options[ss.selRow][ss.selCol];

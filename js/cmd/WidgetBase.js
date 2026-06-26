@@ -1,5 +1,6 @@
 import { makeCell } from '../sgr.js';
 import { startDrag, moveDrag, endDrag, markDirtyRows } from '../drag.js';
+import { OverlayZ } from '../overlay.js';
 
 export class WidgetBase {
     constructor(shell) {
@@ -21,7 +22,7 @@ export class WidgetBase {
             x: this._x,
             h: this._h,
             w: this._w,
-            z: 10,
+            z: OverlayZ.WIDGET,
             owner: this,
             getCell: (relRow, relCol) => {
                 if (relRow < this._h && relCol < this._w && this._buffer) {

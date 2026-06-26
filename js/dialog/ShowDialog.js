@@ -1,4 +1,5 @@
 import { Dialog } from './Dialog.js';
+import { centeredDialogPos } from './position.js';
 
 export class ShowDialog extends Dialog {
     constructor(term, opts) {
@@ -6,9 +7,10 @@ export class ShowDialog extends Dialog {
         this.message = opts.message || '';
         this._lines = this.message.split('\n');
         const h = Math.max(4, this._lines.length + 4);
+        const pos = centeredDialogPos(term, this.width, h);
         this.h = h;
-        this.x = opts.x != null ? opts.x : Math.floor((term.cols - this.width) / 2);
-        this.y = opts.y != null ? opts.y : Math.floor((term.rows - h) / 2);
+        this.x = opts.x != null ? opts.x : pos.x;
+        this.y = opts.y != null ? opts.y : pos.y;
         this._onExit = opts.onExit || null;
     }
 

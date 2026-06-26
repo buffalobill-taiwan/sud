@@ -79,52 +79,46 @@ export class Typewriter {
         const tokens = [];
         let i = 0;
         let visible = '';
+        const flushVisible = () => {
+            if (!visible) return;
+            tokens.push({ type: 'text', text: visible });
+            visible = '';
+        };
 
         while (i < text.length) {
             const code = text.charCodeAt(i);
 
             if (code === 0x1B) {
-                if (visible) { tokens.push({ type: 'text', text: visible }); visible = ''; }
+                flushVisible();
                 const start = i;
                 i++;
                 if (i >= text.length) break;
                 const next = text.charCodeAt(i);
+                i++;
 
                 if (next === 0x5B) {
-                    i++;
                     while (i < text.length) {
                         const c = text.charCodeAt(i);
                         i++;
                         if (c >= 0x40 && c <= 0x7E) break;
                     }
-                } else if (next === 0x5D) {
-                    i++;
+                } else if (next === 0x5D || next === 0x50) {
                     while (i < text.length) {
                         if (text.charCodeAt(i) === 0x07) { i++; break; }
-                        if (text.charCodeAt(i) === 0x1B && i + 1 < text.length && text.charCodeAt(i + 1) === 0x5C) { i += 2; break; }
-                        i++;
-                    }
-                } else if (next === 0x50) {
-                    i++;
-                    while (i < text.length) {
-                        if (text.charCodeAt(i) === 0x07) { i++; break; }
-                        if (text.charCodeAt(i) === 0x1B && i + 1 < text.length && text.charCodeAt(i + 1) === 0x5C) { i += 2; break; }
-                        i++;
-                    }
-                } else if (next === 0x58 || next === 0x5E || next === 0x5F) {
-                    i++;
-                    while (i < text.length) {
                         if (text.charCodeAt(i) === 0x1B && i + 1 < text.length && text.charCodeAt(i + 1) === 0x5C) { i += 2; break; }
                         i++;
                     }
                 } else {
-                    i++;
+                    while (i < text.length) {
+                        if (text.charCodeAt(i) === 0x1B && i + 1 < text.length && text.charCodeAt(i + 1) === 0x5C) { i += 2; break; }
+                        i++;
+                    }
                 }
 
                 tokens.push({ type: 'seq', text: text.slice(start, i) });
 
             } else if (code === 0x0A) {
-                if (visible) { tokens.push({ type: 'text', text: visible }); visible = ''; }
+                flushVisible();
                 tokens.push({ type: 'nl' });
                 i++;
             } else {
@@ -133,7 +127,7 @@ export class Typewriter {
             }
         }
 
-        if (visible) tokens.push({ type: 'text', text: visible });
+        flushVisible();
         return tokens;
     }
 

@@ -147,18 +147,10 @@ export class Renderer {
         const ovs = this.screen.overlays;
         if (!ovs || !ovs.length) return baseRow;
 
-        let covered = false;
+        let blended = null;
         for (const ov of ovs) {
             if (displayRow >= ov.y && displayRow < ov.y + ov.h) {
-                covered = true;
-                break;
-            }
-        }
-        if (!covered) return baseRow;
-
-        const blended = baseRow.map(c => ({ ...c }));
-        for (const ov of ovs) {
-            if (displayRow >= ov.y && displayRow < ov.y + ov.h) {
+                if (!blended) blended = baseRow.map(c => ({ ...c }));
                 const relRow = displayRow - ov.y;
                 const x0 = ov.x;
                 const w = ov.w || (this.screen.cols - x0);
@@ -189,7 +181,7 @@ export class Renderer {
                 }
             }
         }
-        return blended;
+        return blended || baseRow;
     }
 
     _getDataRow(displayRow) {

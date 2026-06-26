@@ -1,17 +1,17 @@
 import { Dialog } from './Dialog.js';
 import { makeCell } from '../sgr.js';
+import { centeredDialogPos } from './position.js';
 
 export class InputDialog extends Dialog {
     constructor(term, opts) {
         const width = opts.width || 40;
         const h = 8;
-        const x = Math.floor((term.cols - width) / 2);
-        const y = Math.floor((term.rows - h) / 2);
+        const pos = centeredDialogPos(term, width, h);
 
         super(term, { ...opts, width });
 
-        this.x = opts.x != null ? opts.x : x;
-        this.y = opts.y != null ? opts.y : Math.max(0, y - 1);
+        this.x = opts.x != null ? opts.x : pos.x;
+        this.y = opts.y != null ? opts.y : Math.max(0, pos.y - 1);
         this.h = h;
         this.prompt = opts.prompt || '';
         this.inputText = '';
