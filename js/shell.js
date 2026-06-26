@@ -343,8 +343,8 @@ export class DemoShell {
 
     _openCalcDialog(menuDlg) {
         this._createDialog(InputDialog, 'calc', {
-            title: '\請\輸\入\算\式',
-            prompt: '\算\式\：',
+            title: '請輸入算式',
+            prompt: '算式：',
             footer: 'Enter Confirm  ESC Back',
             onConfirm: (expr) => {
                 if (!expr.trim()) return;
@@ -363,7 +363,7 @@ export class DemoShell {
     _openQuizDialog(menuDlg) {
         let a = Math.floor(Math.random() * 9) + 1;
         let b = Math.floor(Math.random() * 9) + 1;
-        const ops = ['+', '-', '\×'];
+        const ops = ['+', '-', '×'];
         const op = ops[Math.floor(Math.random() * 3)];
         if (op === '-' && a < b) b = [a, a = b][0];
         const answer = op === '+' ? a + b : op === '-' ? a - b : a * b;
@@ -377,9 +377,9 @@ export class DemoShell {
                 const userAns = parseInt(expr.trim(), 10);
                 let msg;
                 if (userAns === answer) {
-                    msg = bold(green('\✓ Correct!'));
+                    msg = bold(green('✓ Correct!'));
                 } else {
-                    msg = bold(red('\✗ Wrong!')) + '  Answer: ' + bold(white('' + answer));
+                    msg = bold(red('✗ Wrong!')) + '  Answer: ' + bold(white('' + answer));
                 }
                 this._showResultDialog(msg);
             },
@@ -392,7 +392,7 @@ export class DemoShell {
         const menuDlg = this._createDialog(MenuDialog, 'menu', {
             width: 44,
             title: 'Command Menu',
-            footer: '\↑\↓ Navigate  \↩ Execute  ESC Quit',
+            footer: '↑↓ Navigate  ↩ Execute  ESC Quit',
             visibleCount: 5,
             onSelect: (item) => {
                 if (item.name === 'calc') {

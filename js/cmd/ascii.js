@@ -8,7 +8,7 @@ export class Ascii extends CmdBase {
             this.print(sgr(48, 5, bg)('  '));
             if (bg % 8 === 7) this.print('\n');
         }
-        this.print('\n' + bold('Color Cube 6\×6\×6 (\▄ bg=G\₁ fg=G\ₒ, B=0..5):') + '\n');
+        this.print('\n' + bold('Color Cube 6×6×6 (▄ bg=G₁ fg=Gₒ, B=0..5):') + '\n');
         for (let g = 0; g < 6; g += 2) {
             this.print(gray(g + '-' + (g + 1)) + ' ');
             for (let b = 0; b < 6; b++) {
@@ -16,7 +16,7 @@ export class Ascii extends CmdBase {
                 for (let r = 0; r < 6; r++) {
                     const top = 16 + r + g * 36 + b * 6;
                     const bot = 16 + r + (g + 1) * 36 + b * 6;
-                    this.print(sgr(38, 5, bot, 48, 5, top)('\▄'));
+                    this.print(sgr(38, 5, bot, 48, 5, top)('▄'));
                 }
             }
             this.print('\n');
