@@ -3,6 +3,22 @@
 ## Goal
 Pure HTML+CSS+JS 80×25 terminal emulator using Unifont monospace font, DOM `<span>` rendering.
 
+## Project Status
+
+Live demo: <https://buffalobill-taiwan.github.io/htmlterm/>
+
+| Area | Status |
+|---|---|
+| Terminal core (Screen/Parser/Renderer) | Complete |
+| Overlay compositing (widgets + dialogs) | Complete |
+| Frame-stack shell + Typewriter | Complete |
+| Demo commands | 18 registered (see Command Architecture) |
+| Automated tests | None |
+| CI | None |
+
+Recent focus (Jun 2026): architecture refactors — frame stack model, dialog module split,
+shared constants/helpers, `StateStack` merged into `DialogFrame`, CJK overlay clipping.
+
 ## Architecture
 
 ### Overlay compositing
@@ -82,12 +98,15 @@ down/up/move/wheel. If the callback returns `true`, no escape sequence is sent.
 ```
 Mouse event
   → terminal._onMouseDown/Up/Move/Wheel
-    → this.onMouse(type, info)
+    → this.onMouse(type, info)          // main.js wires shell.handleMouse
       → shell.handleMouse(type, info)
-        → activeDialog.handleMouse(type, info)
-          → Dialog._onMouse(type, info) — returns false by default
-            → MenuDialog._onMouse: hover/click/wheel on item rows
+        → mousedown on overlay.owner?   → startDrag (widgets + dialogs)
+        → mousemove/mouseup             → moveDrag/endDrag while _dragTarget set
+        → else                          → return false (terminal sends mouse escapes)
 ```
+
+Dialog menu navigation is keyboard-only (`MenuDialog.handleKey`). Mouse is used
+for overlay drag repositioning, not item selection.
 
 ## Shell Architecture
 
@@ -139,7 +158,7 @@ User input
 
 ### Input routing priority
 
-`handleInput` checks conditions in strict order (shell.js:275):
+`handleInput` checks conditions in strict order (`shell.js`):
 
 | Priority | Condition | Handler |
 |---|---|---|
@@ -154,7 +173,7 @@ User input
 
 | Producer | Path | Animation |
 |---|---|---|
-| **Cmd** (`this.print()`) | `CmdBase.print()` → `shell.print()` → `Typewriter.enqueue()` | Animated (4ms half, 8ms wide) |
+| **Cmd** (`this.print()`) | `CmdBase.print()` → `shell.print()` → `Typewriter.enqueue()` | Animated (rAF; half=1, wide=2 frame credits) |
 | **Dialog** (`_writeStr`) | Fills `_buffer[][]` → overlay z=100 | Instant |
 | **Widget** (`putc`) | Fills `_buffer[][]` → overlay z=10 | Instant |
 | **Shell prompt** (`showPrompt`) | `term.write(this.prompt)` (direct, no Typewriter) | Instant |
@@ -162,7 +181,7 @@ User input
 
 ### Prompt scheduling — `_processStack`
 
-`_processStack()` (shell.js:159) is the single gate for advancing the frame
+`_processStack()` (`shell.js`) is the single gate for advancing the frame
 stack and showing the next prompt. Called from every completion path via
 `this._tick()`:
 
@@ -179,13 +198,11 @@ stack is empty and all blocking conditions clear:
 
 ```js
 _processStack() {
-    this.promptShown = false;
     while (true) {
         while (top.done) pop();
         if (stack empty) {
-            if (typewriter.active) return;  // wait for drain
-            if (!_busy && !_readLinePending && !promptShown)
-                this.showPrompt();
+            if (typewriter.isActive()) return;  // wait for drain
+            if (!_busy && !_readLinePending) this.showPrompt();
             return;
         }
         frame = top;
@@ -251,7 +268,7 @@ Widgets and dialogs are both buffer-overlay elements:
 | Draggable | Yes (`startDrag`/`moveDrag`/`endDrag` on WidgetBase) | Yes (built into Dialog) |
 | Position remembered | Yes — `ShellWidgetManager._savedPos` keyed by `constructor.name` | Yes — cursor saved/restored by `DialogFrame` |
 | Reopen at last position | Automatic via manager | Via cursor state on `DialogFrame` |
-| Input handling | None (TSR only) | Yes — `handleKey()`, `_onMouse()` |
+| Input handling | None (TSR only) | Yes — `handleKey()` (keyboard); drag via overlay `owner` |
 | Update mechanism | `setInterval()` / `requestAnimationFrame` (self-driven) | Event-driven (keyboard/mouse) |
 
 The only architectural difference: widgets do not intercept user input. They
@@ -263,7 +280,7 @@ Z level.
 
 ### SGR→cell attrs in dialogs
 
-`_writeStr(buf, y, x, str, maxX)` parses SGR sequences inline:
+`js/dialog/write.js` — `_writeStr(buf, y, x, str, maxX)` parses SGR sequences inline:
 - `\x1B[1m` → `cell.bold = true`
 - `\x1B[36m` → `cell.fg = 6`
 - `\x1B[0m` → reset to defaults
@@ -298,59 +315,48 @@ intentionally excluded.
 These are recognised gaps with no filesystem dependency that remain
 unaddressed:
 
-## Changes Made This Session
-
-### Done
-- **Magic numbers → constants** (`js/constants.js`): Added `CHAR_WIDTH=8`, `CHAR_HEIGHT=16`, `TAB_WIDTH=8`, `CSI_INTRODUCER=0x5B`. All files updated to reference these instead of literals.
-- **`isFinalByte(code)` extracted** (`js/sgr.js`): Shared range check `code >= 0x40 && code <= 0x7E` — replaces 4 sites across Parser.js, typewriter.js, Dialog.js.
-- **`warn(msg)` extracted** (`js/sgr.js`): Replaces `typeof console !== 'undefined'` guard in 3 sites (terminal.js ×2, shell.js ×1).
-- **`createEmptyBuffer(w, h)` extracted** (`js/sgr.js`): Deduplicates identical buffer-init logic in Dialog._initBuffer and WidgetBase._createEmptyBuffer.
-- **`DEFAULT_DIALOG_WIDTH` usage fixed**: InputDialog.js and ShowDialog.js now import and use the constant instead of hardcoded `40`.
-- **Dead code removed**: `_setMode`/`_resetMode` (insertMode, never read) removed from Parser.js; unreachable `Dialog._onKey` base method removed; `DialogFrame` dead import removed from CmdBase.js.
-- **Private marker cleanup** (`Parser.js`): `n[0] === '?' || n[0] === '>' || ...` replaced with `"?!><'".includes(n[0])`.
-- **`_saveScroll` renamed** (`Screen.js`): To `_normalScroll` for consistency with `_normal*` naming pattern.
-- **`_maxViewOffset` made public** (`Screen.js`): Renamed to `maxViewOffset()` — Terminal accesses it without violating encapsulation.
-- **`String()` removed** (`calc.js`): Unnecessary wrapper around `result` (already a number).
-- **Null guard added** (`write.js`): `buf[y]` null check before `buf[y].length`.
-- **Renderer defaults** (`Renderer.js`): `charWidth`/`charHeight` fallbacks now reference `CHAR_WIDTH`/`CHAR_HEIGHT` from constants.js.
-- **StateStack→CmdFrame integration** (`js/CmdFrame.js`): `DialogFrame` now owns cursor lifecycle via `_saveCursor()`/`finish()`; removed stand-alone `StateStack` class. `ShellWidgetManager` hooks into `shell.addDialogRestoreHook()`.
-
-### Removed
-- `DialogFrame` import from `CmdBase.js`
-- `_onKey` base method from `Dialog.js` (unreachable — subclasses override completely)
-- `_setMode`/`_resetMode` from `Parser.js` (only handled `insertMode` which was never read)
-- `_createEmptyBuffer` from `WidgetBase.js` (replaced by shared `createEmptyBuffer` in sgr.js)
-- `_saveScroll` property in `Screen.js` (renamed to `_normalScroll`)
-- `_maxViewOffset` private method (renamed to public `maxViewOffset`)
-- Old `typeof console !== 'undefined'` guards in terminal.js ×2, shell.js ×1
-- `StateStack.js` file — cursor lifecycle moved to `DialogFrame` in `CmdFrame.js`
+| Gap | Notes |
+|---|---|
+| Automated tests | No unit/integration tests; manual browser testing only |
+| Virtual `cd`/`pwd` | May add CWD string state for prompt/UX — no filesystem needed |
+| Command history search | LineEditor has up/down history only, no incremental search |
+| Tab completion | Command names only; no argument completion |
+| Copy on select | Relies on browser/OS; no terminal-native selection model |
+| Artwork pipeline | Pixel data is static ES modules in `js/cmd/art/`; `tools/png2art.js` is offline only |
 
 ## Command Architecture
 
 ```
 js/cmd/
-├── CmdBase.js         # execute(args) | print(text) | readLine(cb) | select() | prompt() | static commandName/help/menu
-├── help.js            Help      — iterates shell._cmdList dynamically
+├── index.js           Barrel export — shell auto-registers all exported command classes
+├── CmdBase.js         execute(args) | print(text) | readLine(cb) | select() | prompt()
+├── help.js            Help        — iterates shell.cmdList dynamically
 ├── clear.js           Clear
 ├── echo.js            Echo
-├── date.js            Date
+├── date.js            DateCmd
 ├── cowsay.js          Cowsay
 ├── ascii.js           Ascii
 ├── fortune.js         Fortune
-├── calc.js            Calc        — safe recursive-descent expression evaluator
-├── goodbye.js         GoodbyeCmd  — print farewell message
-├── menu.js            MenuCmd     — execute delegates to shell._menuCmd()
-├── mbti.js            MbtiCmd     — MBTI personality test (interactive)
-├── astrology.js       AstrologyCmd — daily horoscope with zodiac grid selection
-├── widget.js          WidgetCmd   — toggle TSR clock
-├── clock.js           ClockCmd
-├── quiz.js            Quiz        — uses prompt() for math challenge
+├── calc.js            Calc        — delegates to safeEval (calc-expr.js)
+├── goodbye.js         GoodbyeCmd
+├── menu.js            MenuCmd     — delegates to shell.menuCmd()
+├── mbti.js            MbtiCmd     — interactive MBTI test (select())
+├── astrology.js       AstrologyCmd — zodiac grid selection + horoscope
+├── clock.js           ClockCmd    — toggle TSR clock (replaces removed widget cmd)
+├── quiz.js            Quiz        — math quiz via readLine()
 ├── dvd.js             DvdCmd      — toggle bouncing DVD logo
-├── flash.js           Flash       — merged blink+smallblink with `--border` flag
+├── flash.js           Flash       — screen/border flash; `--border` flag; Ctrl+C abort
+├── art.js             Art         — async pixel-art renderer (random artwork)
+├── sleep.js           Sleep       — wait N seconds; Ctrl+C abort
+├── art/               Static pixel data modules (adam, blacklotus, glaneuses, …)
 └── widgets/
     ├── ClockWidget.js
     └── DVDWidget.js
 ```
+
+**18 registered commands:** `art`, `ascii`, `astrology`, `calc`, `clear`, `clock`,
+`cowsay`, `date`, `dvd`, `echo`, `flash`, `fortune`, `goodbye`, `help`, `menu`,
+`mbti`, `quiz`, `sleep`
 
 **CmdBase contract:**
 
@@ -402,19 +408,22 @@ No wrap-around, no cross-dimension movement.
 **Custom move signature:** `(data, row, col, options)` → `{row, col}`
 **Custom render signature:** `(selRow, selCol, options, term)` → (writes to term)
 
-**Registration flow:**
+**Registration flow** (`shell.js` iterates `js/cmd/index.js` exports):
 
 ```js
 _registerCommands() {
-    const classes = [Help, Clear, Echo, ..., MenuCmd];
-    for (const Cls of classes) {
+    for (const Cls of Object.values(cmdModule)) {
+        if (typeof Cls !== 'function' || !Cls.commandName) continue;
         const cmd = new Cls(this);
-        this.commands[name] = cmd.execute.bind(cmd);
-        this._cmdList.push({ name, help });
-        if (menu) this.menuItems.push({ name, desc: menu });
+        this.commands[Cls.commandName] = cmd.execute.bind(cmd);
+        this.cmdList.push({ name: Cls.commandName, help: Cls.help });
+        if (Cls.menu) this.menuItems.push({ name: Cls.commandName, desc: Cls.menu });
     }
 }
 ```
+
+Non-command exports (`CmdBase`, `WidgetBase`, widget classes) are skipped because
+they lack `commandName`.
 
 ### readLine — Interactive Input for Commands
 
@@ -425,7 +434,7 @@ CmdBase.readLine(callback)
   → shell.readLine(callback)    // sets this._readLinePending + this._readLineBuffer = ''
   → handleInput checks _readLinePending (priority 3, see Shell Architecture)
   → characters accumulated in _readLineBuffer (NOT this.line)
-  → Enter: callback(_readLineBuffer.trim()), then _schedulePrompt()
+  → Enter: callback(_readLineBuffer.trim()), then _tick()
   → Ctrl+C: cancel, showPrompt()
 ```
 
@@ -435,17 +444,19 @@ input arrives only through the callback parameter.
 
 ### Typewriter — animated command output
 
-`Typewriter` buffers text and releases one token per tick:
+`Typewriter` uses `requestAnimationFrame` with per-frame credit budgeting
+(`_speed`: half=1, wide=2 frame credits per character):
 
-| Token | Speed | Example |
+| Token | Cost | Example |
 |---|---|---|
-| Wide/CJK | 8ms | 漢字 |
-| Half-width | 4ms | a, b, $ |
+| Wide/CJK char | 2 credits | 漢字 |
+| Half-width char | 1 credit | a, b, $ |
 | Escape seq | instant | `\x1B[31m` |
-| Newline | instant | `\n` |
+| `seqtext` pair | sum of text credits | SGR prefix + following text batched atomically |
+| Newline | 1 credit (as char) | `\n` |
 
 - `CmdBase.print()` → `shell.print()` → `Typewriter.enqueue()`
-- Shell defers prompt until typewriter drain (via `_schedulePrompt`)
+- Shell defers prompt until typewriter drain (via `_tick` → `_processStack`)
 - Only `Ctrl+C` passes through during animation (aborts + shows prompt)
 - Dialog rendering, widget buffers, and shell prompt bypass typewriter
 
@@ -511,7 +522,7 @@ _writeStr(buf, row, 0, s, W);
 ```
 
 **CJK safety:** `_bufWidth(str)` skips SGR sequences and sums cell widths
-(`_isWide(ch) ? 2 : 1`). Used for centering and cursor positioning.
+(`isWide(ch) ? 2 : 1` from `unicode-width.js`). Used for centering and cursor positioning.
 
 **`_bufWidth` ANSI skip:** `_bufWidth` detects `[` (0x5B) as a CSI introducer
 (not a terminator), so param bytes like `1`, `;`, `32`, `m` in `\x1B[1;32m`
@@ -540,25 +551,49 @@ draw() {
 }
 ```
 
-## relevant Files
+## Relevant Files
 
+### Core terminal
+
+- `js/constants.js`: Shared constants (`CHAR_WIDTH`, `CHAR_HEIGHT`, `TAB_WIDTH`, `CSI_INTRODUCER`, `DEFAULT_DIALOG_WIDTH`, `SCROLLBACK_MAX`)
 - `js/Screen.js`: Cell buffer, cursor, scroll/SGR state, dirty tracking, overlays[]
-- `js/sgr.js`: Shared SGR helpers + terminal constants (`defaultAttr`, `applySGR`, `makeCell`, `CURSOR_HIDE`/`CURSOR_SHOW`, `OverlayZ`, `formatTime`)
 - `js/Parser.js`: VT100 escape state machine
 - `js/Renderer.js`: Per-cell DOM grid (`cellEls[][]`), cursor element, render loop, overlay blend, `colToHex()` color palette
 - `js/terminal.js`: Thin coordinator composing Screen/Parser/Renderer
-- `js/LineEditor.js`: Line editing, history, tab completion
-- `js/shell.js`: DemoShell orchestrates editor/typewriter/dialogs/widgets
-- `js/dialog/index.js`: Barrel export
-- `js/dialog/Dialog.js`: Dialog base class, `_writeStr`
-- `js/dialog/MenuDialog.js`: Menu dialog
-- `js/dialog/InputDialog.js`: Input dialog
-- `js/dialog/ShowDialog.js`: Show message dialog
-- `js/typewriter.js`: Animated text output
-- `js/CmdFrame.js`: Frame stack types (CmdFrame, SyncCmdFrame, DialogFrame — cursor save/restore in `DialogFrame._saveCursor`/`finish`)
-- `js/cmd/WidgetBase.js`: Overlay lifecycle, `_buffer`, `putc()`
-- `js/cmd/widgets/ClockWidget.js`: TSR clock using `putc()`
-- `js/cmd/widgets/DVDWidget.js`: Bouncing DVD logo — 7×3 color block, 120ms interval
+- `js/unicode-width.js`: Font-metric `isWide(ch)` for CJK/double-width detection
+
+### Shared utilities
+
+- `js/sgr.js`: SGR helpers (`defaultAttr`, `applySGR`, `makeCell`, color shortcuts), `createEmptyBuffer`, `isFinalByte`, `warn`, `CURSOR_HIDE`/`CURSOR_SHOW`, `OverlayZ`, `formatTime`
+- `js/drag.js`: Shared drag helpers used by Dialog and WidgetBase
 - `js/tokenize.js`: Shell command tokenizer (backslash escaping, quotes)
-- `js/select-grid.js`: Grid navigation helpers (`defaultGridMove`, `displayWidth`)
 - `js/calc-expr.js`: Safe recursive-descent expression evaluator (`safeEval`)
+
+### Shell
+
+- `js/shell.js`: DemoShell + ShellWidgetManager — editor, typewriter, dialogs, widgets, frame stack
+- `js/LineEditor.js`: Line editing, history, tab completion
+- `js/typewriter.js`: rAF-based animated command output
+- `js/CmdFrame.js`: Frame stack types (CmdFrame, SyncCmdFrame, DialogFrame — cursor save/restore in `DialogFrame._saveCursor`/`finish`)
+- `js/select-grid.js`: Grid navigation helpers (`defaultGridMove`, `displayWidth`)
+
+### Dialogs (`js/dialog/`)
+
+- `index.js`: Barrel export
+- `Dialog.js`: Base class, frame drawing, drag, overlay lifecycle
+- `MenuDialog.js`, `InputDialog.js`, `ShowDialog.js`: Concrete dialogs
+- `write.js`: `_writeStr`, `_bufWidth`, SGR→cell attrs for dialog buffers
+- `position.js`: Dialog positioning helpers
+
+### Commands (`js/cmd/`)
+
+- `index.js`: Barrel export for auto-registration
+- `CmdBase.js`: Command base class
+- `WidgetBase.js`: Overlay lifecycle, `_buffer`, `putc()`
+- `widgets/ClockWidget.js`: TSR clock (8 cells, 1s interval)
+- `widgets/DVDWidget.js`: Bouncing DVD logo (7×3, 120ms interval)
+- `art.js` + `art/*.js`: Pixel-art renderer and static artwork data
+
+### Tools
+
+- `tools/png2art.js`: Offline PNG → art module converter (not used at runtime)
