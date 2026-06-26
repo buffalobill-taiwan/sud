@@ -36,30 +36,18 @@ export class Terminal {
     set curX(v) { this.screen.curX = v; }
     get curY() { return this.screen.curY; }
     set curY(v) { this.screen.curY = v; }
-    get scrollTop() { return this.screen.scrollTop; }
-    set scrollTop(v) { this.screen.scrollTop = v; }
-    get scrollBottom() { return this.screen.scrollBottom; }
-    set scrollBottom(v) { this.screen.scrollBottom = v; }
-    get attr() { return this.screen.attr; }
-    set attr(v) { this.screen.attr = v; }
-    get modes() { return this.screen.modes; }
-    get mouseMode() { return this.screen.mouseMode; }
-    set mouseMode(v) { this.screen.mouseMode = v; }
     get viewOffset() { return this.screen.viewOffset; }
     set viewOffset(v) { this.screen.viewOffset = v; }
-    get buffer() { return this.screen.buffer; }
-    get scrollback() { return this.screen.scrollback; }
     get overlays() { return this.screen.overlays; }
     addOverlay(ov) { this.screen.addOverlay(ov); }
     removeOverlay(ov) { this.screen.removeOverlay(ov); }
     get charWidth() { return this.renderer.charWidth; }
     get charHeight() { return this.renderer.charHeight; }
-
-    getRow(r) { return this.screen.getRow(r); }
-    setRow(r, row) { this.screen.setRow(r, row); }
     get cursorHidden() { return this.screen.cursorHidden; }
     set cursorHidden(v) { this.screen.cursorHidden = v; }
-    markAllDirty() { this.screen.markAllDirty(); }
+    get modes() { return this.screen.modes; }
+    get mouseMode() { return this.screen.mouseMode; }
+    set mouseMode(v) { this.screen.mouseMode = v; }
     markRowDirty(r) { this.screen.markRowDirty(r); }
     isWide(ch) { return this.screen.isWide(ch); }
 
@@ -69,25 +57,14 @@ export class Terminal {
         this._focusInput();
     }
 
-    clearBuffer() { this.screen.clearBuffer(); }
-
     scrollbackUp(n) { this.screen.scrollbackUp(n); }
     scrollbackDown(n) { this.screen.scrollbackDown(n); }
-
-    lineFeed() { this.screen.lineFeed(); }
-    carriageReturn() { this.screen.carriageReturn(); }
-    cursorUp(n) { this.screen.cursorUp(n); }
-    cursorDown(n) { this.screen.cursorDown(n); }
-    cursorForward(n) { this.screen.cursorForward(n); }
-    cursorBack(n) { this.screen.cursorBack(n); }
 
     resize(cols, rows) {
         this.screen.resize(cols, rows);
         this.renderer.resizeDOM(cols, rows);
         if (this.onResize) this.onResize(cols, rows);
     }
-
-    stopRenderLoop() { this.renderer.stopRenderLoop(); }
 
     dispose() {
         document.removeEventListener('keydown', this._keydownHandler);
@@ -102,7 +79,7 @@ export class Terminal {
         document.removeEventListener('mousemove', this._mouseMoveHandler);
         this.container.removeEventListener('contextmenu', this._contextHandler);
         if (this._resizeHandler) window.removeEventListener('resize', this._resizeHandler);
-        this.stopRenderLoop();
+        this.renderer.stopRenderLoop();
     }
 
     _send(data) {

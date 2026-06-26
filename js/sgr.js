@@ -1,4 +1,4 @@
-import { DEFAULT_FG, DEFAULT_BG } from './constants.js';
+import { DEFAULT_FG, DEFAULT_BG, CSI_INTRODUCER } from './constants.js';
 
 export function defaultAttr() {
     return { fg: DEFAULT_FG, bg: DEFAULT_BG, bold: false, dim: false, italic: false, underline: false, blink: false, inverse: false, conceal: false, crossedOut: false };
@@ -110,4 +110,39 @@ export function createEmptyBuffer(w, h) {
         buf.push(row);
     }
     return buf;
+}
+
+export function makeOverlayGetCell(buffer, w, h) {
+    return (relRow, relCol) => {
+        const buf = typeof buffer === 'function' ? buffer() : buffer;
+        if (buf && relRow < h && relCol < w) return buf[relRow][relCol];
+        return null;
+    };
+}
+
+export function skipEscapeSeq(text, i) {
+    if (text.charCodeAt(i) !== 0x1B) return i;
+    i++;
+    if (i >= text.length) return i;
+    const next = text.charCodeAt(i);
+    i++;
+    if (next === CSI_INTRODUCER) {
+        while (i < text.length) {
+            if (isFinalByte(text.charCodeAt(i))) { i++; break; }
+            i++;
+        }
+    } else if (next === 0x5D || next === 0x50) {
+        while (i < text.length) {
+            const c = text.charCodeAt(i);
+            if (c === 0x07) { i++; break; }
+            if (c === 0x1B && i + 1 < text.length && text.charCodeAt(i + 1) === 0x5C) { i += 2; break; }
+            i++;
+        }
+    } else {
+        while (i < text.length) {
+            if (text.charCodeAt(i) === 0x1B && i + 1 < text.length && text.charCodeAt(i + 1) === 0x5C) { i += 2; break; }
+            i++;
+        }
+    }
+    return i;
 }

@@ -6,7 +6,11 @@
  */
 
 import { isFinalByte } from './sgr.js';
-import { CSI_INTRODUCER } from './constants.js';
+import {
+    CSI_INTRODUCER, ESC, ESC_OSC, ESC_DCS, ESC_SOS, ESC_PM, ESC_APC,
+    ESC_SS2, ESC_SS3, ESC_IND, ESC_NEL, ESC_SAVE, ESC_RESTORE,
+    ESC_TABSET, ESC_RI, ESC_ST, BEL, CR, LF, BS, TAB,
+} from './constants.js';
 
 export class Parser {
     constructor(screen, callbacks = {}) {
@@ -41,12 +45,8 @@ export class Parser {
                 }
                 continue;
             }
-            if (this._state === 'osc') {
-                this._feedOSC(data, i);
-                continue;
-            }
-            if (this._state === 'dcs' || this._state === 'sos' || this._state === 'pm' || this._state === 'apc') {
-                this._feedStringTerminator(data, i);
+            if (this._state === 'osc' || this._state === 'dcs' || this._state === 'sos' || this._state === 'pm' || this._state === 'apc') {
+                this._feedStringMode(data, i);
                 continue;
             }
             this._feedGround(ch);
@@ -56,38 +56,31 @@ export class Parser {
     _feedGround(ch) {
         const screen = this.screen;
         const code = ch.charCodeAt ? ch.charCodeAt(0) : ch;
-        if (code === 0x1B) {
+        if (code === ESC) {
             this._state = 'escape';
             this._buf = '';
             this._privateMarker = '';
             return;
         }
-        if (code === 0x0D) { screen.carriageReturn(); return; }
-        if (code === 0x0A) { screen.carriageReturn(); screen.lineFeed(); return; }
-        if (code === 0x08) { screen.backspace(); return; }
-        if (code === 0x09) { screen.tab(); return; }
-        if (code === 0x07) { return; }
+        if (code === CR) { screen.carriageReturn(); return; }
+        if (code === LF) { screen.carriageReturn(); screen.lineFeed(); return; }
+        if (code === BS) { screen.backspace(); return; }
+        if (code === TAB) { screen.tab(); return; }
+        if (code === BEL) { return; }
         if (code === 0x0B || code === 0x0C) { screen.lineFeed(); return; }
         if (code < 0x20) return;
         screen.writeChar(ch);
     }
 
-    _feedOSC(data, i) {
+    _feedStringMode(data, i) {
         const ch = data[i];
-        if (ch === '\x07' || (ch === '\x1B' && data[i + 1] === '\\')) {
+        const terminated = ch === '\x07' || (ch === '\x1B' && data[i + 1] === '\\');
+        if (terminated) {
             if (ch === '\x1B') i++;
-            this._oscString = '';
+            if (this._state === 'osc') this._oscString = '';
             this._state = 'ground';
-        } else {
+        } else if (this._state === 'osc') {
             this._oscString += ch;
-        }
-    }
-
-    _feedStringTerminator(data, i) {
-        const ch = data[i];
-        if (ch === '\x07' || (ch === '\x1B' && data[i + 1] === '\\')) {
-            if (ch === '\x1B') i++;
-            this._state = 'ground';
         }
     }
 
@@ -95,19 +88,19 @@ export class Parser {
         const screen = this.screen;
         const code = ch.charCodeAt ? ch.charCodeAt(0) : ch;
         if (code === CSI_INTRODUCER) { this._state = 'csi'; this._buf = ''; return; }
-        if (code === 0x5D) { this._state = 'osc'; this._oscString = ''; return; }
-        if (code === 0x50) { this._state = 'dcs'; return; }
-        if (code === 0x58) { this._state = 'sos'; return; }
-        if (code === 0x5E) { this._state = 'pm'; return; }
-        if (code === 0x5F) { this._state = 'apc'; return; }
-        if (code === 0x4E || code === 0x4F) { this._state = 'ground'; return; }
-        if (code === 0x44) { screen.lineFeed(); this._state = 'ground'; return; }
-        if (code === 0x45) { screen.lineFeed(); screen.carriageReturn(); this._state = 'ground'; return; }
-        if (code === 0x37) { screen.savedX = screen.curX; screen.savedY = screen.curY; this._state = 'ground'; return; }
-        if (code === 0x38) { if (screen.savedX >= 0) { screen.curX = screen.savedX; screen.curY = screen.savedY; screen.markRowDirty(screen.curY); } this._state = 'ground'; return; }
-        if (code === 0x48) { this._state = 'ground'; return; }
-        if (code === 0x4D) { screen.reverseIndex(); this._state = 'ground'; return; }
-        if (code === 0x5C) { this._state = 'ground'; return; }
+        if (code === ESC_OSC) { this._state = 'osc'; this._oscString = ''; return; }
+        if (code === ESC_DCS) { this._state = 'dcs'; return; }
+        if (code === ESC_SOS) { this._state = 'sos'; return; }
+        if (code === ESC_PM) { this._state = 'pm'; return; }
+        if (code === ESC_APC) { this._state = 'apc'; return; }
+        if (code === ESC_SS2 || code === ESC_SS3) { this._state = 'ground'; return; }
+        if (code === ESC_IND) { screen.lineFeed(); this._state = 'ground'; return; }
+        if (code === ESC_NEL) { screen.lineFeed(); screen.carriageReturn(); this._state = 'ground'; return; }
+        if (code === ESC_SAVE) { screen.savedX = screen.curX; screen.savedY = screen.curY; this._state = 'ground'; return; }
+        if (code === ESC_RESTORE) { if (screen.savedX >= 0) { screen.curX = screen.savedX; screen.curY = screen.savedY; screen.markRowDirty(screen.curY); } this._state = 'ground'; return; }
+        if (code === ESC_TABSET) { this._state = 'ground'; return; }
+        if (code === ESC_RI) { screen.reverseIndex(); this._state = 'ground'; return; }
+        if (code === ESC_ST) { this._state = 'ground'; return; }
         if (code >= 0x40 && code <= 0x5F) { this._state = 'ground'; return; }
         this._state = 'ground';
     }

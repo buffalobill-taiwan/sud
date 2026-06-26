@@ -1,7 +1,7 @@
 import { isWide } from '../unicode-width.js';
 import { _writeStr } from './write.js';
-import { startDrag, moveDrag, endDrag, markDirtyRows } from '../drag.js';
-import { OverlayZ, isFinalByte, createEmptyBuffer } from '../sgr.js';
+import { addDragMethods, markDirtyRows } from '../drag.js';
+import { OverlayZ, isFinalByte, createEmptyBuffer, makeOverlayGetCell } from '../sgr.js';
 import { DEFAULT_DIALOG_WIDTH, CSI_INTRODUCER } from '../constants.js';
 
 export class Dialog {
@@ -17,6 +17,13 @@ export class Dialog {
         this._buffer = null;
         this._overlay = null;
         this._savePos = opts.savePos || null;
+
+        addDragMethods(this, term, {
+            getX: () => this.x, getY: () => this.y,
+            setX: v => this.x = v, setY: v => this.y = v,
+            getW: () => this.width, getH: () => this.h,
+            getOverlay: () => this._overlay,
+        });
     }
 
     open() {
@@ -28,12 +35,7 @@ export class Dialog {
             w: this.width,
             z: OverlayZ.DIALOG,
             owner: this,
-            getCell: (relRow, relCol) => {
-                if (this._buffer && relRow < this.h && relCol < this.width) {
-                    return this._buffer[relRow][relCol];
-                }
-                return null;
-            }
+            getCell: makeOverlayGetCell(() => this._buffer, this.width, this.h),
         };
         this.term.addOverlay(this._overlay);
 
@@ -60,23 +62,6 @@ export class Dialog {
     refreshContent() {
         this._renderContent();
         this._markDirty();
-    }
-
-    startDrag(col, row) {
-        startDrag(this, col, row, this.x, this.y);
-    }
-
-    moveDrag(col, row) {
-        moveDrag({
-            obj: this, term: this.term, col, row,
-            fromX: this.x, fromY: this.y,
-            w: this.width, h: this.h,
-            setPos: (nx, ny) => { this.x = nx; this.y = ny; },
-        });
-    }
-
-    endDrag() {
-        endDrag(this);
     }
 
     _markDirty() {

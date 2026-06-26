@@ -1,11 +1,10 @@
-import { MenuDialog, InputDialog, ShowDialog } from './dialog/index.js';
+import { MenuDialog } from './dialog/index.js';
 import { Typewriter } from './typewriter.js';
 import { LineEditor } from './LineEditor.js';
 import * as cmdModule from './cmd/index.js';
 import { SyncCmdFrame, DialogFrame } from './CmdFrame.js';
-import { bold, green, yellow, gray, red, white, warn } from './sgr.js';
+import { bold, green, yellow, gray, red, warn } from './sgr.js';
 import { tokenize } from './tokenize.js';
-import { safeEval } from './calc-expr.js';
 
 export class DemoShell {
     constructor(term) {
@@ -35,8 +34,7 @@ export class DemoShell {
         this._queuedInput = [];
         this._busy = false;
         this._abortGeneration = 0;
-        this._readLinePending = null;
-        this._readLineBuffer = '';
+        this._readLineState = null;
         this._dragTarget = null;
         this._savedPositions = {};
 
@@ -117,11 +115,10 @@ export class DemoShell {
     }
 
     readLine(callback) {
-        if (this._readLinePending) {
+        if (this._readLineState) {
             warn('readLine called while another readLine is pending — overwriting');
         }
-        this._readLinePending = callback;
-        this._readLineBuffer = '';
+        this._readLineState = { callback, buffer: '' };
     }
 
     _tick() {
@@ -145,7 +142,7 @@ export class DemoShell {
 
             if (this._cmdStack.length === 0) {
                 if (this.typewriter.isActive()) return;
-                if (!this._busy && !this._readLinePending) {
+                if (!this._busy && !this._readLineState) {
                     this.showPrompt();
                 }
                 return;
@@ -195,26 +192,24 @@ export class DemoShell {
             const ch = data[i];
             const code = ch.charCodeAt ? ch.charCodeAt(0) : ch;
             if (code === 0x0D || code === 0x0A) {
-                const cb = this._readLinePending;
-                this._readLinePending = null;
+                const state = this._readLineState;
+                this._readLineState = null;
                 this.term.write('\r\n');
-                cb(this._readLineBuffer.trim());
-                this._readLineBuffer = '';
+                state.callback(state.buffer.trim());
                 this._tick();
                 return;
             }
             if (code === 0x03) {
-                this._readLinePending = null;
-                this._readLineBuffer = '';
+                this._readLineState = null;
                 this.term.write('^C\n');
                 this.showPrompt();
                 return;
             }
             if (code === 0x7F || code === 0x08) {
-                if (this._readLineBuffer.length > 0) {
-                    const last = this._readLineBuffer[this._readLineBuffer.length - 1];
+                if (this._readLineState && this._readLineState.buffer.length > 0) {
+                    const last = this._readLineState.buffer[this._readLineState.buffer.length - 1];
                     const w = this.term.isWide(last) ? 2 : 1;
-                    this._readLineBuffer = this._readLineBuffer.slice(0, -1);
+                    this._readLineState.buffer = this._readLineState.buffer.slice(0, -1);
                     this.term.write('\b'.repeat(w) + ' '.repeat(w) + '\b'.repeat(w));
                 }
                 continue;
@@ -224,7 +219,7 @@ export class DemoShell {
                 continue;
             }
             if (code < 0x20) continue;
-            this._readLineBuffer += ch;
+            if (this._readLineState) this._readLineState.buffer += ch;
             this.term.write(ch);
         }
     }
@@ -233,8 +228,7 @@ export class DemoShell {
         this._abortGeneration++;
         this._busy = false;
         this._queuedInput = [];
-        this._readLinePending = null;
-        this._readLineBuffer = '';
+        this._readLineState = null;
         this._cmdStack = [];
         this.typewriter.abort();
         this.term.write('^C\n');
@@ -264,7 +258,7 @@ export class DemoShell {
                 if (top.done) this._tick();
                 if (handled) return;
             }
-            if (this._readLinePending) {
+            if (this._readLineState) {
                 this._handleReadLineInput(data);
                 return;
             }
@@ -280,7 +274,7 @@ export class DemoShell {
             this._checkCtrlC(data);
             return;
         }
-        if (this._readLinePending) {
+        if (this._readLineState) {
             this._handleReadLineInput(data);
             return;
         }
@@ -332,61 +326,6 @@ export class DemoShell {
         return dlg;
     }
 
-    _showResultDialog(msg) {
-        setTimeout(() => {
-            this._createDialog(ShowDialog, 'show', {
-                message: msg,
-                onExit: () => {},
-            });
-        }, 0);
-    }
-
-    _openCalcDialog(menuDlg) {
-        this._createDialog(InputDialog, 'calc', {
-            title: '請輸入算式',
-            prompt: '算式：',
-            footer: 'Enter Confirm  ESC Back',
-            onConfirm: (expr) => {
-                if (!expr.trim()) return;
-                let msg;
-                try {
-                    msg = String(safeEval(expr));
-                } catch (e) {
-                    msg = red('Error:') + ' ' + (e.message || 'invalid expression');
-                }
-                this._showResultDialog(msg);
-            },
-            onCancel: () => {},
-        });
-    }
-
-    _openQuizDialog(menuDlg) {
-        let a = Math.floor(Math.random() * 9) + 1;
-        let b = Math.floor(Math.random() * 9) + 1;
-        const ops = ['+', '-', '×'];
-        const op = ops[Math.floor(Math.random() * 3)];
-        if (op === '-' && a < b) b = [a, a = b][0];
-        const answer = op === '+' ? a + b : op === '-' ? a - b : a * b;
-
-        this._createDialog(InputDialog, 'quiz', {
-            title: 'Quiz',
-            prompt: `${a} ${op} ${b} = ?`,
-            footer: 'Enter Answer  ESC Back',
-            onConfirm: (expr) => {
-                if (!expr.trim()) return;
-                const userAns = parseInt(expr.trim(), 10);
-                let msg;
-                if (userAns === answer) {
-                    msg = bold(green('✓ Correct!'));
-                } else {
-                    msg = bold(red('✗ Wrong!')) + '  Answer: ' + bold(white('' + answer));
-                }
-                this._showResultDialog(msg);
-            },
-            onCancel: () => {},
-        });
-    }
-
     menuCmd() {
         this.menuDialog = null;
         const menuDlg = this._createDialog(MenuDialog, 'menu', {
@@ -395,15 +334,12 @@ export class DemoShell {
             footer: '↑↓ Navigate  ↩ Execute  ESC Quit',
             visibleCount: 5,
             onSelect: (item) => {
-                if (item.name === 'calc') {
-                    this._openCalcDialog(menuDlg);
+                const inst = this._cmdInstances[item.name];
+                if (inst && inst.constructor.openMenuDialog) {
+                    inst.constructor.openMenuDialog(this, menuDlg);
                     return;
                 }
-                if (item.name === 'quiz') {
-                    this._openQuizDialog(menuDlg);
-                    return;
-                }
-                this._pushFrame(new SyncCmdFrame(this, item.name, [], this._cmdInstances[item.name]));
+                this._pushFrame(new SyncCmdFrame(this, item.name, [], inst));
                 this.menuDialog = null;
                 return 'close';
             },

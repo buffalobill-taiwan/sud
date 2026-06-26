@@ -1,5 +1,5 @@
-import { makeCell, defaultAttr, OverlayZ, createEmptyBuffer } from '../sgr.js';
-import { startDrag, moveDrag, endDrag, markDirtyRows } from '../drag.js';
+import { makeCell, defaultAttr, OverlayZ, createEmptyBuffer, makeOverlayGetCell } from '../sgr.js';
+import { addDragMethods, markDirtyRows } from '../drag.js';
 
 export class WidgetBase {
     constructor(shell) {
@@ -11,6 +11,13 @@ export class WidgetBase {
         this._h = 0;
         this._buffer = null;
         this._overlay = null;
+
+        addDragMethods(this, this.term, {
+            getX: () => this._x, getY: () => this._y,
+            setX: v => this._x = v, setY: v => this._y = v,
+            getW: () => this._w, getH: () => this._h,
+            getOverlay: () => this._overlay,
+        });
     }
 
     start() {
@@ -22,12 +29,7 @@ export class WidgetBase {
             w: this._w,
             z: OverlayZ.WIDGET,
             owner: this,
-            getCell: (relRow, relCol) => {
-                if (relRow < this._h && relCol < this._w && this._buffer) {
-                    return this._buffer[relRow][relCol];
-                }
-                return null;
-            }
+            getCell: makeOverlayGetCell(() => this._buffer, this._w, this._h),
         };
         this.term.addOverlay(this._overlay);
     }
@@ -66,25 +68,8 @@ export class WidgetBase {
         this.setPosition(state.x, state.y);
     }
 
-    startDrag(col, row) {
-        startDrag(this, col, row, this._x, this._y);
-    }
-
-    moveDrag(col, row) {
-        moveDrag({
-            obj: this, term: this.term, col, row,
-            fromX: this._x, fromY: this._y,
-            w: this._w, h: this._h,
-            setPos: (nx, ny) => { this._x = nx; this._y = ny; },
-        });
-    }
-
     _markDirty() {
         markDirtyRows(this.term, this._y, this._h);
-    }
-
-    endDrag() {
-        endDrag(this);
     }
 
     putc(x, y, ch, fg, bg, attrs) {

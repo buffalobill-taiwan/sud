@@ -275,7 +275,7 @@ export class Screen {
 
     _makeCell(ch) {
         if (!this._cachedEmptyCell) {
-            this._cachedEmptyCell = makeCell(' ', defaultAttr(), 1);
+            this._cachedEmptyCell = Object.freeze(makeCell(' ', defaultAttr(), 1));
         }
         if (ch === ' ' && this.attr.fg === DEFAULT_FG && this.attr.bg === DEFAULT_BG &&
             !this.attr.bold && !this.attr.dim && !this.attr.italic &&

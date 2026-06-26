@@ -1,5 +1,4 @@
-import { CURSOR_HIDE, CURSOR_SHOW, isFinalByte } from './sgr.js';
-import { CSI_INTRODUCER } from './constants.js';
+import { CURSOR_HIDE, CURSOR_SHOW, skipEscapeSeq } from './sgr.js';
 
 export class Typewriter {
     constructor(term) {
@@ -94,30 +93,7 @@ export class Typewriter {
             if (code === 0x1B) {
                 flushVisible();
                 const start = i;
-                i++;
-                if (i >= text.length) break;
-                const next = text.charCodeAt(i);
-                i++;
-
-                if (next === CSI_INTRODUCER) {
-                    while (i < text.length) {
-                        const c = text.charCodeAt(i);
-                        i++;
-                        if (isFinalByte(c)) break;
-                    }
-                } else if (next === 0x5D || next === 0x50) {
-                    while (i < text.length) {
-                        if (text.charCodeAt(i) === 0x07) { i++; break; }
-                        if (text.charCodeAt(i) === 0x1B && i + 1 < text.length && text.charCodeAt(i + 1) === 0x5C) { i += 2; break; }
-                        i++;
-                    }
-                } else {
-                    while (i < text.length) {
-                        if (text.charCodeAt(i) === 0x1B && i + 1 < text.length && text.charCodeAt(i + 1) === 0x5C) { i += 2; break; }
-                        i++;
-                    }
-                }
-
+                i = skipEscapeSeq(text, i);
                 tokens.push({ type: 'seq', text: text.slice(start, i) });
 
             } else if (code === 0x0A) {
