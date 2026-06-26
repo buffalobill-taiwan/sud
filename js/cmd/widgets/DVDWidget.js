@@ -19,7 +19,6 @@ export class DVDWidget extends WidgetBase {
         this._dy = 1;
         this._color = 1;
         this._intervalId = null;
-        this._managedPos = false;
     }
 
     start() {
@@ -34,6 +33,22 @@ export class DVDWidget extends WidgetBase {
             this._intervalId = null;
         }
         super.stop();
+    }
+
+    getSaveState() {
+        return {
+            ...super.getSaveState(),
+            dx: this._dx,
+            dy: this._dy,
+            color: this._color,
+        };
+    }
+
+    restoreSaveState(state) {
+        super.restoreSaveState(state);
+        this._dx = state.dx;
+        this._dy = state.dy;
+        this._color = state.color;
     }
 
     startDrag(col, row) {

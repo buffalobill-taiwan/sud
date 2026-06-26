@@ -11,7 +11,6 @@ export class WidgetBase {
         this._h = 0;
         this._buffer = null;
         this._overlay = null;
-        this._managedPos = true;
     }
 
     start() {
@@ -57,6 +56,14 @@ export class WidgetBase {
 
     getPosition() {
         return { x: this._x, y: this._y };
+    }
+
+    getSaveState() {
+        return { x: this._x, y: this._y };
+    }
+
+    restoreSaveState(state) {
+        this.setPosition(state.x, state.y);
     }
 
     startDrag(col, row) {

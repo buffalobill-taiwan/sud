@@ -242,6 +242,26 @@ Dialog.close():
   term.removeOverlay(_overlay)
 ```
 
+### Widget vs Dialog
+
+Widgets and dialogs are both buffer-overlay elements:
+
+| Property | Widget (z=10) | Dialog (z=100) |
+|---|---|---|
+| Buffer | `WidgetBase._buffer[][]` via `putc()` | `Dialog._buffer[][]` via `_writeStr()` |
+| Draggable | Yes (`startDrag`/`moveDrag`/`endDrag` on WidgetBase) | Yes (built into Dialog) |
+| Position remembered | Yes — `ShellWidgetManager._savedPos` keyed by `constructor.name` | Yes — `StateStack` saves/restores |
+| Reopen at last position | Automatic via manager | Via `StateStack` cursor state |
+| Input handling | None (TSR only) | Yes — `handleKey()`, `_onMouse()` |
+| Update mechanism | `setInterval()` / `requestAnimationFrame` (self-driven) | Event-driven (keyboard/mouse) |
+
+The only architectural difference: widgets do not intercept user input. They
+update purely via TSR (timers). Dialogs own the input path while open.
+
+Both share the same overlay compositing — their cell buffers are blended over
+the main terminal buffer at render time, in registration order within the same
+Z level.
+
 ### SGR→cell attrs in dialogs
 
 `_writeStr(buf, y, x, str, maxX)` parses SGR sequences inline:

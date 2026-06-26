@@ -137,7 +137,7 @@ export class DemoShell {
 
     execute(line) {
         const trimmed = line.trim();
-        if (trimmed.length === 0) return;
+        if (trimmed.length === 0) { this._tick(); return; }
         this.editor.history.push(trimmed);
         if (this.editor.history.length > 100) this.editor.history.shift();
 
@@ -392,13 +392,15 @@ export class ShellWidgetManager {
         this.shell = shell;
         this.term = shell.term;
         this._widgets = [];
+        this._savedState = new Map();
         this._hook = () => this.redrawAll();
         shell.stateStack.addRestoreHook(this._hook);
     }
 
     add(widget) {
-        if (widget._managedPos) {
-            widget.setPosition(widget._x, this._widgets.length);
+        const key = widget.constructor.name;
+        if (this._savedState.has(key)) {
+            widget.restoreSaveState(this._savedState.get(key));
         }
         widget.start();
         this._widgets.push(widget);
@@ -407,12 +409,9 @@ export class ShellWidgetManager {
     remove(widget) {
         const i = this._widgets.indexOf(widget);
         if (i < 0) return;
+        this._savedState.set(widget.constructor.name, widget.getSaveState());
         widget.stop();
         this._widgets.splice(i, 1);
-        for (let j = 0; j < this._widgets.length; j++) {
-            const w = this._widgets[j];
-            if (w._managedPos) w.setPosition(w._x, j);
-        }
         this.redrawAll();
     }
 
