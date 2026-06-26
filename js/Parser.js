@@ -39,39 +39,52 @@ export class Parser {
                 continue;
             }
             if (this._state === 'osc') {
-                if (ch === '\x07' || (ch === '\x1B' && data[i + 1] === '\\')) {
-                    if (ch === '\x1B') i++;
-                    this._oscString = '';
-                    this._state = 'ground';
-                } else {
-                    this._oscString += ch;
-                }
+                this._feedOSC(data, i);
                 continue;
             }
             if (this._state === 'dcs' || this._state === 'sos' || this._state === 'pm' || this._state === 'apc') {
-                if (ch === '\x07' || (ch === '\x1B' && data[i + 1] === '\\')) {
-                    if (ch === '\x1B') i++;
-                    this._state = 'ground';
-                }
+                this._feedStringTerminator(data, i);
                 continue;
             }
+            this._feedGround(ch);
+        }
+    }
 
-            const code = ch.charCodeAt ? ch.charCodeAt(0) : ch;
-            if (code === 0x1B) {
-                this._state = 'escape';
-                this._buf = '';
-                this._privateMarker = '';
-                continue;
-            }
-            if (code === 0x0D) { this.screen.carriageReturn(); continue; }
-            if (code === 0x0A) { this.screen.carriageReturn(); this.screen.lineFeed(); continue; }
-            if (code === 0x08) { this.screen.backspace(); continue; }
-            if (code === 0x09) { this.screen.tab(); continue; }
-            if (code === 0x07) { continue; }
-            if (code === 0x0B || code === 0x0C) { this.screen.lineFeed(); continue; }
-            if (code < 0x20) continue;
+    _feedGround(ch) {
+        const screen = this.screen;
+        const code = ch.charCodeAt ? ch.charCodeAt(0) : ch;
+        if (code === 0x1B) {
+            this._state = 'escape';
+            this._buf = '';
+            this._privateMarker = '';
+            return;
+        }
+        if (code === 0x0D) { screen.carriageReturn(); return; }
+        if (code === 0x0A) { screen.carriageReturn(); screen.lineFeed(); return; }
+        if (code === 0x08) { screen.backspace(); return; }
+        if (code === 0x09) { screen.tab(); return; }
+        if (code === 0x07) { return; }
+        if (code === 0x0B || code === 0x0C) { screen.lineFeed(); return; }
+        if (code < 0x20) return;
+        screen.writeChar(ch);
+    }
 
-            this.screen.writeChar(ch);
+    _feedOSC(data, i) {
+        const ch = data[i];
+        if (ch === '\x07' || (ch === '\x1B' && data[i + 1] === '\\')) {
+            if (ch === '\x1B') i++;
+            this._oscString = '';
+            this._state = 'ground';
+        } else {
+            this._oscString += ch;
+        }
+    }
+
+    _feedStringTerminator(data, i) {
+        const ch = data[i];
+        if (ch === '\x07' || (ch === '\x1B' && data[i + 1] === '\\')) {
+            if (ch === '\x1B') i++;
+            this._state = 'ground';
         }
     }
 

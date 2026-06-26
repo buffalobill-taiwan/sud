@@ -26,19 +26,20 @@ export class InputDialog extends Dialog {
 
     _showCursor() {
         const bufW = this._bufWidth(this.inputText);
-        const cx = 4 + bufW;
-        const cy = 4;
-        const ch = ' ';
-        const attr = { fg: 0, bg: 7, bold: false, dim: false, italic: false, underline: false, blink: false, inverse: true, conceal: false, crossedOut: false };
+        const cx = this._inputPrefix.length + bufW;
+        const cy = this._inputRow;
         if (cx < this.width) {
-            this._buffer[cy][cx] = makeCell(ch, attr);
+            const attr = { fg: 0, bg: 7, bold: false, dim: false, italic: false, underline: false, blink: false, inverse: true, conceal: false, crossedOut: false };
+            this._buffer[cy][cx] = makeCell(' ', attr);
         }
         this.term.markRowDirty(this.y + cy);
     }
 
     _renderContent() {
+        this._inputPrefix = ' > ';
+        this._inputRow = 4;
         this._leftRow(3, '  ' + this.prompt);
-        this._leftRow(4, ' > ' + this.inputText);
+        this._leftRow(this._inputRow, this._inputPrefix + this.inputText);
         this._showCursor();
     }
 

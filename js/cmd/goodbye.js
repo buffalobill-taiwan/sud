@@ -1,10 +1,10 @@
 import { CmdBase } from './CmdBase.js';
 
-export class Exit extends CmdBase {
+export class GoodbyeCmd extends CmdBase {
     execute(args) {
         this.print('Goodbye!\n');
     }
-    static get commandName() { return 'exit'; }
-    static get help() { return 'Exit (just for fun)'; }
+    static get commandName() { return 'goodbye'; }
+    static get help() { return 'Say goodbye'; }
     static get menu() { return null; }
 }

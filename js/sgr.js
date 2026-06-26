@@ -1,13 +1,5 @@
 /**
- * Shared SGR parsing and cell construction.
- *
- * Provides a single source of truth for:
- * - default attribute values
- * - SGR parameter application (all params except extended 38/48 colors)
- * - cell object construction
- *
- * Extended 38/48 colors are NOT handled here because they consume
- * variable-length parameter sequences and require caller context.
+ * Shared SGR parsing, cell construction, and terminal constants.
  */
 
 export function defaultAttr() {
@@ -78,6 +70,22 @@ export const white = _sgrStyle([37]);
 export const gray = _sgrStyle([90]);
 
 export function sgr(...params) { return _sgrStyle(params); }
+
+// ── Terminal escape constants ──
+
+export const CURSOR_HIDE = '\x1B[?25l';
+export const CURSOR_SHOW = '\x1B[?25h';
+
+export const OverlayZ = {
+    WIDGET: 10,
+    DIALOG: 100,
+};
+
+export function formatTime(date) {
+    return String(date.getHours()).padStart(2, '0') + ':' +
+           String(date.getMinutes()).padStart(2, '0') + ':' +
+           String(date.getSeconds()).padStart(2, '0');
+}
 
 export function makeCell(ch, attr, width) {
     return {

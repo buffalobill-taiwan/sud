@@ -19,17 +19,14 @@ export class LineEditor {
         this._prompt = '$ ';
     }
 
-    /** Provide command name list for tab completion. */
     setCommands(names) {
         this._commands = names;
     }
 
-    /** Set prompt string (for Ctrl+L redisplay). */
     setPrompt(text) {
         this._prompt = text;
     }
 
-    /** Reset line buffer (e.g. after showing prompt). */
     reset() {
         this.line = '';
         this.historyPos = -1;
@@ -63,7 +60,7 @@ export class LineEditor {
 
             if (code === 0x0C) {
                 this.term.write('\x1B[2J\x1B[H');
-                this.term.write(this._promptText + this.line);
+                this.term.write(this._prompt + this.line);
                 consumed = true;
                 continue;
             }
@@ -96,7 +93,7 @@ export class LineEditor {
                 } else if (completions.length > 1) {
                     this.term.write('\r\n');
                     this.term.write(completions.join('  ') + '\n');
-                    this.term.write(this._promptText + this.line);
+                    this.term.write(this._prompt + this.line);
                 }
                 consumed = true;
                 continue;
@@ -155,7 +152,4 @@ export class LineEditor {
         return consumed;
     }
 
-    get _promptText() {
-        return this._prompt;
-    }
 }

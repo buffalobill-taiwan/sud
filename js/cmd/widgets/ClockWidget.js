@@ -1,5 +1,5 @@
 import { WidgetBase } from '../WidgetBase.js';
-import { formatTime } from '../../time.js';
+import { formatTime } from '../../sgr.js';
 
 export class ClockWidget extends WidgetBase {
     constructor(shell, opts = {}) {

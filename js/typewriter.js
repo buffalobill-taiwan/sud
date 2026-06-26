@@ -1,3 +1,5 @@
+import { CURSOR_HIDE, CURSOR_SHOW } from './sgr.js';
+
 export class Typewriter {
     constructor(term) {
         this.term = term;
@@ -136,7 +138,7 @@ export class Typewriter {
         this._active = true;
         this._lastFrameTime = performance.now();
         this._accumulator = 0;
-        this.term.write('\x1B[?25l');
+        this.term.write(CURSOR_HIDE);
         this._rafId = requestAnimationFrame(t => this._tick(t));
     }
 
@@ -173,7 +175,7 @@ export class Typewriter {
     }
 
     _flushDrain() {
-        this.term.write('\x1B[?25h');
+        this.term.write(CURSOR_SHOW);
         for (const cb of this._drainCallbacks.slice()) cb();
     }
 }

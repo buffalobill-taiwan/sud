@@ -1,7 +1,7 @@
 import { isWide } from '../unicode-width.js';
 import { _writeStr } from './write.js';
 import { startDrag, moveDrag, endDrag, markDirtyRows } from '../drag.js';
-import { OverlayZ } from '../overlay.js';
+import { OverlayZ, CURSOR_HIDE, CURSOR_SHOW } from '../sgr.js';
 
 export class Dialog {
     constructor(term, opts) {
@@ -41,7 +41,7 @@ export class Dialog {
             this.stack.push(this.y, this.h);
         } else {
             this.term.cursorHidden = true;
-            this.term.write('\x1B[?25l');
+            this.term.write(CURSOR_HIDE);
         }
 
         this._drawFrame();
@@ -57,7 +57,7 @@ export class Dialog {
             this.stack.pop();
         } else {
             this.term.cursorHidden = false;
-            this.term.write('\x1B[?25h');
+            this.term.write(CURSOR_SHOW);
         }
         this.term.removeOverlay(this._overlay);
         this._overlay = null;

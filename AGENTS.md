@@ -107,7 +107,7 @@ Empty stack                     → editor mode, LineEditor handles input
 execute("help")                 → push SyncCmdFrame → handler runs
                                   → typewriter active → block
                                   → drain → finish → pop → prompt
-execute("blink")                → push SyncCmdFrame → handler sets _busy=true
+execute("flash")                → push SyncCmdFrame → handler sets _busy=true
                                   → block on _busy → _busy=false → finish → prompt
 execute("art")                  → push SyncCmdFrame → handler returns Promise
                                   → block on _asyncPending → promise resolves
@@ -172,7 +172,7 @@ stack and showing the next prompt. Called from every completion path via
 - async handler `.then()` after async command completes
 - `readLine` Enter handler
 - dialog frame auto-unblock (dialog closed)
-- `_busy` release in blink/smallblink
+- `_busy` release in flash
 
 The loop pops done frames, starts new frames, and shows prompt only when the
 stack is empty and all blocking conditions clear:
@@ -316,6 +316,21 @@ unaddressed:
 - **Removed neofetch, uname, whoami**: Three fileless commands removed — no filesystem dependency to justify them, and their output was trivial.
 - **InteractiveCmd merged into CmdBase**: All interactive methods (`select()`, `prompt()`, `open()/close()`, `handleKey()`) moved into `CmdBase`. `InteractiveCmd.js` deleted. `mbti.js`/`astrology.js` now import `CmdBase` directly.
 
+### Done
+- **Cursor hide/show constants** (`js/sgr.js`): `CURSOR_HIDE`/`CURSOR_SHOW` — replaced magic `'\x1B[?25l'`/`'\x1B[?25h'` strings in 5 files (typewriter, CmdBase, Dialog, StateStack, terminal).
+- **`tokenize()` extracted** (`js/tokenize.js`): 49-line shell tokenizer extracted from `shell.js` into its own module.
+- **Blink/SmallBlink merged** (`js/cmd/flash.js`): Two 80%+ identical flash commands merged into one `flash` command with `--border` flag. Old `blink`/`smallblink` files deleted.
+- **`exit` → `goodbye`** (`js/cmd/goodbye.js`): Renamed since the command doesn't actually exit; misleading name fixed.
+- **`Function()` removed from calc** (`js/calc-expr.js`): `Function('"use strict"; return (...)')()` replaced by safe recursive-descent expression evaluator (`safeEval`). Same fix applied to `shell._openCalcDialog`.
+- **`overlay.js` + `time.js` inlined** (`js/sgr.js`): Two 4-5 line micro-modules merged into `sgr.js` as `OverlayZ` and `formatTime`.
+- **`select-grid.js` extracted** (`js/select-grid.js`): `_defaultGridMove` and `_displayWidth` moved from `CmdBase.js` into their own module, reducing `CmdBase.js` from 337 to 309 lines.
+- **Parser per-state handlers** (`js/Parser.js`): `_feedGround()`, `_feedOSC()`, `_feedStringTerminator()` extracted — nesting depth reduced from 7 to 3 levels.
+- **InputDialog cursor derived** (`js/dialog/InputDialog.js`): Hardcoded `cx=4, cy=4` replaced by `_inputPrefix.length` + `_inputRow` — no silent breakage on layout changes.
+- **MenuDialog double-assign fixed** (`js/dialog/MenuDialog.js`): `x`/`y` set once in `super()` call instead of being overridden after construction.
+- **DVDWidget._clear() removed** (`js/cmd/widgets/DVDWidget.js`): `_clear()` was a duplicate of `WidgetBase.stop()`'s dirty-row marking.
+- **LineEditor._promptText removed** (`js/LineEditor.js`): Unnecessary getter replaced with direct `this._prompt` access.
+- **Stale comments fixed**: Removed misleading `// ── Public helpers ──`/`// ── Input / events ──`/`// ── Internal: buffer init / cells ──` labels; updated `Renderer.js` JSDoc.
+
 ### Removed
 - `_cmdQueue`, `_executing`, `activeDialog` — replaced by `_cmdStack` / `CmdFrame`
 - `saveArea()`, `restoreArea()`, `saveCursor()`, `restoreCursor()` — no longer needed
@@ -338,6 +353,9 @@ unaddressed:
 - `colToHex()` from `Renderer.js` — cursor colors use CSS classes directly, no algorithmic lookup needed
 - `Renderer.js` cursor `style.backgroundColor`/`style.color` inline — replaced by `className = 'b' + fg + ' q' + bg`
 - `terminal.js` copy textarea `style.position`/`style.opacity` inline — replaced by `.clip-helper` CSS class
+- `overlay.js` + `time.js` — merged into `sgr.js`
+- `blink.js`, `smallblink.js` — merged into `flash.js`
+- `exit.js` — renamed to `goodbye.js`
 
 ## Command Architecture
 
@@ -351,15 +369,16 @@ js/cmd/
 ├── cowsay.js          Cowsay
 ├── ascii.js           Ascii
 ├── fortune.js         Fortune
-├── calc.js            Calc
-├── exit.js            Exit
-├── menu.js            MenuCmd   — execute delegates to shell._menuCmd()
-├── mbti.js            MbtiCmd   — MBTI personality test (interactive)
+├── calc.js            Calc        — safe recursive-descent expression evaluator
+├── goodbye.js         GoodbyeCmd  — print farewell message
+├── menu.js            MenuCmd     — execute delegates to shell._menuCmd()
+├── mbti.js            MbtiCmd     — MBTI personality test (interactive)
 ├── astrology.js       AstrologyCmd — daily horoscope with zodiac grid selection
-├── widget.js          WidgetCmd — toggle TSR clock
+├── widget.js          WidgetCmd   — toggle TSR clock
 ├── clock.js           ClockCmd
-├── quiz.js            Quiz      — uses prompt() for math challenge
-├── dvd.js             DvdCmd    — toggle bouncing DVD logo
+├── quiz.js            Quiz        — uses prompt() for math challenge
+├── dvd.js             DvdCmd      — toggle bouncing DVD logo
+├── flash.js           Flash       — merged blink+smallblink with `--border` flag
 └── widgets/
     ├── ClockWidget.js
     └── DVDWidget.js
@@ -379,8 +398,8 @@ js/cmd/
 
 ### CmdBase.select() — 2D grid selection
 
-`InteractiveCmd` (merged into `CmdBase`) provides keyboard-driven selection
-for commands that need interactive input (MbtiCmd, AstrologyCmd).
+Grid navigation helpers extracted to `js/select-grid.js` (`defaultGridMove`,
+`displayWidth`). `CmdBase` imports and uses them as defaults.
 
 ```js
 select({
@@ -389,14 +408,14 @@ select({
         ['A', 'B', 'C'],
         ['D', 'E'],
     ],
-    move: customMove,              // optional, default = _defaultGridMove
+    move: customMove,              // optional, default = defaultGridMove
     render: customRender,          // optional, default = _defaultGridRender
     onPick: (row, col, value) => { /* called on Enter */ },
     onCancel: () => {},            // optional, default = this.close()
 });
 ```
 
-**Default move (`_defaultGridMove`):**
+**Default move (`defaultGridMove`):**
 
 | Key | Behavior |
 |---|---|
@@ -556,7 +575,7 @@ draw() {
 ## relevant Files
 
 - `js/Screen.js`: Cell buffer, cursor, scroll/SGR state, dirty tracking, overlays[]
-- `js/sgr.js`: Shared SGR helpers (`defaultAttr`, `applySGR`, `makeCell`)
+- `js/sgr.js`: Shared SGR helpers + terminal constants (`defaultAttr`, `applySGR`, `makeCell`, `CURSOR_HIDE`/`CURSOR_SHOW`, `OverlayZ`, `formatTime`)
 - `js/Parser.js`: VT100 escape state machine
 - `js/Renderer.js`: Per-cell DOM grid (`cellEls[][]`), cursor element, render loop, overlay blend, `colToHex()` color palette
 - `js/terminal.js`: Thin coordinator composing Screen/Parser/Renderer
@@ -573,3 +592,6 @@ draw() {
 - `js/cmd/WidgetBase.js`: Overlay lifecycle, `_buffer`, `putc()`
 - `js/cmd/widgets/ClockWidget.js`: TSR clock using `putc()`
 - `js/cmd/widgets/DVDWidget.js`: Bouncing DVD logo — 7×3 color block, 120ms interval
+- `js/tokenize.js`: Shell command tokenizer (backslash escaping, quotes)
+- `js/select-grid.js`: Grid navigation helpers (`defaultGridMove`, `displayWidth`)
+- `js/calc-expr.js`: Safe recursive-descent expression evaluator (`safeEval`)

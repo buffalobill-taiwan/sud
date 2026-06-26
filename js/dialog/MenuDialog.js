@@ -9,10 +9,8 @@ export class MenuDialog extends Dialog {
         const h = visibleCount + 6;
         const pos = centeredDialogPos(term, width, h);
 
-        super(term, { ...opts, width });
+        super(term, { ...opts, width, x: opts.x != null ? opts.x : pos.x, y: opts.y != null ? opts.y : Math.max(0, pos.y - 1) });
 
-        this.x = opts.x != null ? opts.x : pos.x;
-        this.y = opts.y != null ? opts.y : Math.max(0, pos.y - 1);
         this.h = h;
         this.items = items;
         this.visibleCount = visibleCount;

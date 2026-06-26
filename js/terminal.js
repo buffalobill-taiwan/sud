@@ -116,8 +116,6 @@ export class Terminal {
         this.stopRenderLoop();
     }
 
-    // ── Input / events ──
-
     _send(data) {
         if (this.viewOffset > 0) {
             this.viewOffset = 0;

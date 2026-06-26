@@ -1,4 +1,5 @@
 import { CmdBase } from './CmdBase.js';
+import { safeEval } from '../calc-expr.js';
 
 export class Calc extends CmdBase {
     execute(args) {
@@ -7,7 +8,7 @@ export class Calc extends CmdBase {
         const expr = p.rest.join(' ');
         if (!expr) return this.error('no expression provided');
         try {
-            const result = Function('"use strict"; return (' + expr + ')')();
+            const result = safeEval(expr);
             this.print(String(result) + '\n');
         } catch (e) {
             this.error('invalid expression');

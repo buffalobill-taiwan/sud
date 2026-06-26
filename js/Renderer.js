@@ -1,8 +1,5 @@
 /**
- * Renderer — DOM rendering layer for the terminal.
- *
- * Owns the container, row elements, cursor element, and render loop.
- * Reads Screen data to produce DOM output.
+ * Renderer — DOM rendering + cursor management for the terminal.
  */
 
 export class Renderer {

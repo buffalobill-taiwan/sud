@@ -23,10 +23,11 @@
  *   await confirm(question)   — quick Y/N selection
  */
 
-import { red, bold, yellow, green } from '../sgr.js';
+import { red, bold, yellow, green, CURSOR_SHOW, CURSOR_HIDE } from '../sgr.js';
 import { DialogFrame } from '../CmdFrame.js';
 import { ShowDialog } from '../dialog/ShowDialog.js';
 import { InputDialog } from '../dialog/InputDialog.js';
+import { defaultGridMove, displayWidth } from '../select-grid.js';
 
 export class CmdBase {
     constructor(shell) {
@@ -92,7 +93,7 @@ export class CmdBase {
     close() {
         if (this.closed) return;
         this.closed = true;
-        this.term.write('\x1B[?25h');
+        this.term.write(CURSOR_SHOW);
         this.shell._tick();
     }
 
@@ -160,7 +161,7 @@ export class CmdBase {
                 let maxW = 0;
                 for (const row of options) {
                     if (ci < row.length) {
-                        maxW = Math.max(maxW, _displayWidth(row[ci]));
+                        maxW = Math.max(maxW, displayWidth(row[ci]));
                     }
                 }
                 colWidths.push(maxW);
@@ -172,7 +173,7 @@ export class CmdBase {
                     const name = options[ri][ci];
                     const isSel = ri === r && ci === c;
                     const prefix = isSel ? bold(green('▶ ')) : '  ';
-                    const padded = name + ' '.repeat(colWidths[ci] - _displayWidth(name) + 2);
+                    const padded = name + ' '.repeat(colWidths[ci] - displayWidth(name) + 2);
                     s += prefix + padded;
                 }
             }
@@ -182,7 +183,7 @@ export class CmdBase {
         this.closed = false;
         this._selectState = {
             options: opts.options,
-            move: opts.move || _defaultGridMove,
+            move: opts.move || defaultGridMove,
             render: opts.render || defaultRender,
             onPick: opts.onPick,
             onCancel: opts.onCancel || null,
@@ -194,7 +195,7 @@ export class CmdBase {
         this.isTyping = true;
         this.printThen(opts.text || '', () => {
             this.isTyping = false;
-            this.term.write('\x1B[?25l');
+            this.term.write(CURSOR_HIDE);
             const ss = this._selectState;
             ss.render(ss.selRow, ss.selCol, ss.options, ss.term);
             rendered = true;
@@ -305,33 +306,4 @@ export class CmdBase {
     }
 }
 
-function _defaultGridMove(data, row, col, options) {
-    if (data === '\x1B[A') {
-        if (row === 0) return { row, col };
-        const prev = options[row - 1];
-        return { row: row - 1, col: Math.min(col, prev.length - 1) };
-    }
-    if (data === '\x1B[B') {
-        if (row === options.length - 1) return { row, col };
-        const next = options[row + 1];
-        return { row: row + 1, col: Math.min(col, next.length - 1) };
-    }
-    if (data === '\x1B[D') {
-        if (col === 0) return { row, col };
-        return { row, col: col - 1 };
-    }
-    if (data === '\x1B[C') {
-        const cur = options[row];
-        if (col === cur.length - 1) return { row, col };
-        return { row, col: col + 1 };
-    }
-    return { row, col };
-}
 
-function _displayWidth(s) {
-    let w = 0;
-    for (const ch of s) {
-        w += ch.codePointAt(0) > 0x2E7F ? 2 : 1;
-    }
-    return w;
-}

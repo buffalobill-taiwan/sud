@@ -33,7 +33,6 @@ export class DVDWidget extends WidgetBase {
             clearInterval(this._intervalId);
             this._intervalId = null;
         }
-        this._clear();
         super.stop();
     }
 
@@ -48,12 +47,6 @@ export class DVDWidget extends WidgetBase {
     endDrag() {
         if (!this._intervalId) {
             this._intervalId = setInterval(() => this._tick(), 120);
-        }
-    }
-
-    _clear() {
-        for (let r = this._y; r < this._y + this._h; r++) {
-            if (r >= 0 && r < this.term.rows) this.term.markRowDirty(r);
         }
     }
 

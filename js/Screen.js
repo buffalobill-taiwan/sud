@@ -49,8 +49,6 @@ export class Screen {
         this._initBuffer();
     }
 
-    // ── Public helpers ──
-
     getRow(r) { return this.buffer[r]; }
     setRow(r, row) { this.buffer[r] = row; }
     get cursorHidden() { return this._cursorHidden; }
@@ -268,8 +266,6 @@ export class Screen {
             i++;
         }
     }
-
-    // ── Internal: buffer init / cells ──
 
     _initBuffer() {
         this.buffer = [];

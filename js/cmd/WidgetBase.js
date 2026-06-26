@@ -1,6 +1,5 @@
-import { makeCell } from '../sgr.js';
+import { makeCell, OverlayZ } from '../sgr.js';
 import { startDrag, moveDrag, endDrag, markDirtyRows } from '../drag.js';
-import { OverlayZ } from '../overlay.js';
 
 export class WidgetBase {
     constructor(shell) {

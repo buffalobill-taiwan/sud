@@ -59,17 +59,16 @@ Open `index.html` in a modern browser, or visit the live demo:
 | `art` | Render ASCII art from a random artwork |
 | `ascii` | Show ANSI color chart (16 color + 256 color cube) |
 | `astrology` | Today's horoscope for your zodiac sign |
-| `blink` | Flash the screen N times (default 1) |
 | `calc` | Evaluate arithmetic expression |
-| `smallblink` | Flash terminal border N times (default 1) |
 | `clear` | Clear screen |
 | `clock` | Toggle TSR clock widget (replaces old `widget` command) |
 | `cowsay` | Let a cow speak |
 | `date` | Show current date/time |
 | `dvd` | Toggle bouncing DVD logo widget |
 | `echo` | Print arguments |
-| `exit` | Exit the demo shell |
+| `flash` | Flash the screen N times (default 1). Use `--border` for border flash |
 | `fortune` | Display a random fortune |
+| `goodbye` | Print farewell message |
 | `help` | List available commands |
 | `menu` | Open command menu dialog |
 | `mbti` | MBTI personality test (interactive) |
