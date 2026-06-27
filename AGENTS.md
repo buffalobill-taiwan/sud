@@ -18,6 +18,7 @@ Live demo: <https://buffalobill-taiwan.github.io/htmlterm/>
 
 Recent focus (Jun 2026): architecture refactors — frame stack model, dialog module split,
 shared constants/helpers, `StateStack` merged into `DialogFrame`, CJK overlay clipping.
+Frame stack moved from `DemoShell` to `SystemManager` (Jun 2026).
 
 ## Architecture
 
@@ -112,7 +113,8 @@ for overlay drag repositioning, not item selection.
 
 ### Frame stack
 
-`DemoShell` uses a frame stack (`_cmdStack`) instead of a flat command queue.
+`SystemManager` owns the frame stack (`_cmdStack`) instead of a flat command queue.
+`DemoShell` delegates execution/input to `SystemManager` and owns the command registry.
 Each executing entity is a `CmdFrame` that controls I/O while on top of the
 stack:
 
@@ -146,19 +148,21 @@ SyncCmdFrame (interactive cmd)   → cmd.select() sets cmd.closed=false
 ```
 User input
   → terminal.js _onKeyDown → handleInput(data)
-    → top = _cmdStack[last]
-      → top.handleInput?          → frame handles (dialog, readLine, etc.)
-      → top.blocked && Ctrl+C?    → _abortAll()
-      → top.blocked?              → _queuedInput.push(data)
-      → !top? && typewriter.active → _queuedInput or Ctrl+C
-      → !top? && _readLinePending? → _handleReadLineInput
-      → else                      → LineEditor.handleKey(data)
-        → Enter: onExecute(line) → execute(line) → push SyncCmdFrame → _tick
+    → shell.handleInput(data)
+      → system.handleInput(data)
+        → top = _cmdStack[last]
+          → top.handleInput?          → frame handles (dialog, readLine, etc.)
+          → top.blocked && Ctrl+C?    → _abortAll()
+          → top.blocked?              → _queuedInput.push(data)
+          → !top? && typewriter.active → _queuedInput or Ctrl+C
+          → !top? && _readLinePending? → _handleReadLineInput
+          → else                      → LineEditor.handleKey(data)
+            → Enter: onExecute(line) → system.execute(line) → push SyncCmdFrame → _tick
 ```
 
 ### Input routing priority
 
-`handleInput` checks conditions in strict order (`shell.js`):
+`handleInput` checks conditions in strict order (`system.js`):
 
 | Priority | Condition | Handler |
 |---|---|---|
@@ -181,7 +185,7 @@ User input
 
 ### Prompt scheduling — `_processStack`
 
-`_processStack()` (`shell.js`) is the single gate for advancing the frame
+`_processStack()` (`system.js`) is the single gate for advancing the frame
 stack and showing the next prompt. Called from every completion path via
 `this._tick()`:
 
@@ -573,8 +577,8 @@ draw() {
 
 ### System
 
-- `js/system.js`: SystemManager (typewriter, editor, mouse/drag, dialog positions) + WidgetManager
-- `js/shell.js`: DemoShell — command registry, execute, frame stack, input routing
+- `js/system.js`: SystemManager (typewriter, editor, mouse/drag, dialog positions, frame stack, execute, input routing) + WidgetManager
+- `js/shell.js`: DemoShell — command registry, prompt, thin delegates to SystemManager
 - `js/LineEditor.js`: Line editing, history, tab completion
 - `js/typewriter.js`: rAF-based animated command output
 - `js/CmdFrame.js`: Frame stack types (CmdFrame, SyncCmdFrame, DialogFrame — cursor save/restore in `DialogFrame._saveCursor`/`finish`)
