@@ -1,14 +1,17 @@
 import { Typewriter } from './typewriter.js';
 import { LineEditor } from './LineEditor.js';
-import { MenuDialog } from './dialog/index.js';
-import { SyncCmdFrame, DialogFrame } from './CmdFrame.js';
-import { red, yellow, warn } from './sgr.js';
 import { tokenize } from './tokenize.js';
+import { ShellCmd } from './cmd/ShellCmd.js';
+import { ShellFrame, SyncCmdFrame, DialogFrame } from './CmdFrame.js';
+import { bold, green, yellow, gray, red, warn } from './sgr.js';
+import { MenuDialog } from './dialog/MenuDialog.js';
 
 export class SystemManager {
-    constructor(shell) {
-        this.shell = shell;
-        this.term = shell.term;
+    static instance = null;
+
+    constructor(term, cmdModule) {
+        SystemManager.instance = this;
+        this.term = term;
 
         this._cmdStack = [];
         this._tickQueued = false;
@@ -27,26 +30,54 @@ export class SystemManager {
 
         this.cmdList = [];
         this.menuItems = [];
+        this.commands = {};
+        this._cmdInstances = {};
+        this.prompt = '$ ';
+        this.running = false;
 
         this._dialogRestoreHooks = [];
         this._dialogPositions = {};
 
-        this.widgetManager = new WidgetManager(this);
+        this.widgetManager = new WidgetManager();
         this._dragTarget = null;
         this.menuDialog = null;
+
+        this._registerCommands(cmdModule);
+        this.start();
     }
 
-    setup() {
-        this.editor.setPrompt(this.shell.prompt);
-        this.editor.setCommands(Object.keys(this.shell.commands));
+    _registerCommands(cmdModule) {
+        for (const Cls of Object.values(cmdModule)) {
+            if (typeof Cls !== 'function' || !Cls.commandName) continue;
+            const cmd = new Cls();
+            const name = Cls.commandName;
+            const help = Cls.help;
+            const menu = Cls.menu;
+            this._cmdInstances[name] = cmd;
+            this.commands[name] = cmd.execute.bind(cmd);
+            this.cmdList.push({ name, help });
+            if (menu) this.menuItems.push({ name, desc: menu });
+        }
+        this.cmdList.sort((a, b) => a.name.localeCompare(b.name));
+        this.menuItems.sort((a, b) => a.name.localeCompare(b.name));
+        this.editor.setCommands(Object.keys(this.commands));
+        this.editor.setPrompt(this.prompt);
+    }
+
+    start() {
+        this.running = true;
+        this.term.write('\x1B[2J\x1B[H');
+        this.term.write(bold(green('OpenCode Terminal v1.0.0')) + '\n');
+        this.term.write('Type ' + yellow('help') + ' for available commands.\n\n');
+        this.term.write(gray('AEIOUÀÈÌÒÙ金木水火土鑫森淼焱垚あいうえおアイウエオ') + '\n\n');
+        this._pushFrame(new ShellFrame(new ShellCmd()));
+        this._tick();
     }
 
     get busy() { return this._busy; }
-
     get abortGeneration() { return this._abortGeneration; }
 
     holdBusy() { this._busy = true; }
-
     releaseBusy() {
         this._busy = false;
         this._tick();
@@ -73,13 +104,13 @@ export class SystemManager {
         while (true) {
             while (this._cmdStack.length > 0 && this._cmdStack[this._cmdStack.length - 1].done) {
                 this._cmdStack.pop();
+                if (this._cmdStack.length > 0 && this._cmdStack[this._cmdStack.length - 1].persistent) {
+                    this._cmdStack[this._cmdStack.length - 1]._pendingActivate = true;
+                }
             }
 
             if (this._cmdStack.length === 0) {
                 if (this.typewriter.isActive()) return;
-                if (!this._busy && !this._readLineState) {
-                    this.shell.showPrompt();
-                }
                 return;
             }
 
@@ -92,6 +123,14 @@ export class SystemManager {
             }
 
             if (frame.blocked) return;
+
+            if (frame.persistent) {
+                if (frame._pendingActivate) {
+                    frame.onActivate();
+                    frame._pendingActivate = false;
+                }
+                return;
+            }
 
             frame.finish();
         }
@@ -107,10 +146,10 @@ export class SystemManager {
         const cmd = tokens[0] ? tokens[0].toLowerCase() : '';
         const args = tokens.slice(1);
 
-        const handler = this.shell.commands[cmd];
+        const handler = this.commands[cmd];
         if (handler) {
-            const cmdInstance = this.shell._cmdInstances[cmd];
-            this._pushFrame(new SyncCmdFrame(this.shell, cmd, args, cmdInstance));
+            const cmdInstance = this._cmdInstances[cmd];
+            this._pushFrame(new SyncCmdFrame(cmd, args, cmdInstance));
             this._tick();
         } else {
             this.print(red('Command not found: ' + cmd) + '\n');
@@ -140,7 +179,7 @@ export class SystemManager {
             if (code === 0x03) {
                 this._readLineState = null;
                 this.term.write('^C\n');
-                this.shell.showPrompt();
+                this._tick();
                 return;
             }
             if (code === 0x7F || code === 0x08) {
@@ -167,9 +206,12 @@ export class SystemManager {
         this._busy = false;
         this._queuedInput = [];
         this._readLineState = null;
-        this._cmdStack = [];
+        while (this._cmdStack.length > 1) this._cmdStack.pop();
         this.typewriter.abort();
         this.term.write('^C\n');
+        if (this._cmdStack.length === 1 && this._cmdStack[0].persistent) {
+            this._cmdStack[0]._pendingActivate = true;
+        }
         this._tick();
     }
 
@@ -186,7 +228,7 @@ export class SystemManager {
     }
 
     handleInput(data) {
-        if (!this.shell.running) return;
+        if (!this.running) return;
 
         const top = this._cmdStack[this._cmdStack.length - 1];
 
@@ -220,7 +262,7 @@ export class SystemManager {
     }
 
     pushDialogFrame(dlg) {
-        const frame = new DialogFrame(this.shell, dlg);
+        const frame = new DialogFrame(dlg);
         frame._saveCursor();
         dlg.open();
         frame.started = true;
@@ -302,12 +344,12 @@ export class SystemManager {
             footer: '↑↓ Navigate  ↩ Execute  ESC Quit',
             visibleCount: 5,
             onSelect: (item) => {
-                const inst = this.shell._cmdInstances[item.name];
+                const inst = this._cmdInstances[item.name];
                 if (inst && inst.constructor.openMenuDialog) {
-                    inst.constructor.openMenuDialog(this);
+                    inst.constructor.openMenuDialog();
                     return;
                 }
-                this._pushFrame(new SyncCmdFrame(this.shell, item.name, [], inst));
+                this._pushFrame(new SyncCmdFrame(item.name, [], inst));
                 this.menuDialog = null;
                 return 'close';
             },
@@ -318,14 +360,13 @@ export class SystemManager {
 }
 
 export class WidgetManager {
-    constructor(system) {
-        this.system = system;
-        this.shell = system.shell;
-        this.term = system.term;
+    constructor() {
+        this.system = SystemManager.instance;
+        this.term = this.system.term;
         this._widgets = [];
         this._savedState = new Map();
         this._hook = () => this.redrawAll();
-        system.addDialogRestoreHook(this._hook);
+        this.system.addDialogRestoreHook(this._hook);
     }
 
     add(widget) {

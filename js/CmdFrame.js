@@ -1,15 +1,18 @@
 import { CURSOR_HIDE, CURSOR_SHOW } from './sgr.js';
+import { SystemManager } from './system.js';
 
 export class CmdFrame {
-    constructor(shell) {
-        this.shell = shell;
-        this.system = shell.system;
-        this.term = shell.term;
+    constructor() {
+        this.system = SystemManager.instance;
+        this.term = this.system.term;
         this.done = false;
         this.started = false;
     }
 
     get label() { return this.constructor.name; }
+
+    get persistent() { return false; }
+    onActivate() {}
 
     start() {}
     get blocked() { return false; }
@@ -22,8 +25,8 @@ export class CmdFrame {
 }
 
 export class SyncCmdFrame extends CmdFrame {
-    constructor(shell, cmdName, args, cmd) {
-        super(shell);
+    constructor(cmdName, args, cmd) {
+        super();
         this.cmdName = cmdName;
         this.args = args;
         this.cmd = cmd;
@@ -33,7 +36,7 @@ export class SyncCmdFrame extends CmdFrame {
     get label() { return this.cmdName; }
 
     start() {
-        const handler = this.shell.commands[this.cmdName];
+        const handler = this.system.commands[this.cmdName];
         if (handler) {
             const result = handler(this.args);
             if (result instanceof Promise) {
@@ -64,8 +67,8 @@ export class SyncCmdFrame extends CmdFrame {
 }
 
 export class DialogFrame extends CmdFrame {
-    constructor(shell, dialog) {
-        super(shell);
+    constructor(dialog) {
+        super();
         this.dialog = dialog;
         this._savedCursor = null;
     }
@@ -109,5 +112,33 @@ export class DialogFrame extends CmdFrame {
 
     get blocked() {
         return !this.dialog.closed;
+    }
+}
+
+export class ShellFrame extends CmdFrame {
+    constructor(cmd) {
+        super();
+        this.cmd = cmd;
+        this._pendingActivate = false;
+    }
+
+    get persistent() { return true; }
+
+    get label() {
+        const ctor = this.cmd && this.cmd.constructor;
+        return (ctor && ctor.commandName) || 'shell';
+    }
+
+    start() {
+        this.cmd.start();
+    }
+
+    handleInput(data) {
+        this.cmd.handleKey(data);
+        return true;
+    }
+
+    onActivate() {
+        this.cmd.showPrompt();
     }
 }

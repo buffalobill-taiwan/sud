@@ -1,10 +1,11 @@
 /**
- * Entry point. Creates Terminal and DemoShell, wires callbacks.
- * Globals window.term / window.shell exposed for debugging.
+ * Entry point. Creates Terminal and SystemManager, wires callbacks.
+ * Globals window.term / window.system exposed for debugging.
  */
 
 import { Terminal } from './terminal.js';
-import { DemoShell } from './shell.js';
+import { SystemManager } from './system.js';
+import * as cmdModule from './cmd/index.js';
 
 const term = new Terminal(document.getElementById('screen'), {
     cols: 80,
@@ -13,10 +14,10 @@ const term = new Terminal(document.getElementById('screen'), {
     charHeight: 16,
 });
 
-const shell = new DemoShell(term);
-term.onData = (data) => shell.handleInput(data);
-term.onMouse = (type, info) => shell.system.handleMouse(type, info);
+const system = new SystemManager(term, cmdModule);
+term.onData = (data) => system.handleInput(data);
+term.onMouse = (type, info) => system.handleMouse(type, info);
 term.focus();
 
 window.term = term;
-window.shell = shell;
+window.system = system;

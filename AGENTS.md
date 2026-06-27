@@ -19,6 +19,7 @@ Live demo: <https://buffalobill-taiwan.github.io/htmlterm/>
 Recent focus (Jun 2026): architecture refactors — frame stack model, dialog module split,
 shared constants/helpers, `StateStack` merged into `DialogFrame`, CJK overlay clipping.
 Frame stack moved from `DemoShell` to `SystemManager` (Jun 2026).
+`SystemManager` became singleton, `DemoShell` absorbed as `ShellCmd` CmdBase subclass (Jun 2026).
 
 ## Architecture
 
@@ -111,36 +112,37 @@ for overlay drag repositioning, not item selection.
 
 ## Shell Architecture
 
-### Frame stack
+### Frame stack — persistent ShellFrame
 
-`SystemManager` owns the frame stack (`_cmdStack`) instead of a flat command queue.
-`DemoShell` delegates execution/input to `SystemManager` and owns the command registry.
-Each executing entity is a `CmdFrame` that controls I/O while on top of the
-stack:
+`SystemManager` owns the frame stack (`_cmdStack`). A persistent `ShellFrame`
+(`CmdFrame` subclass) always sits at the bottom — the stack is never empty
+during normal operation. Each executing entity is a `CmdFrame` that controls
+I/O while on top of the stack:
 
 | Frame | Source | `blocked` condition | I/O owner |
 |---|---|---|---|---|
+| `ShellFrame` | `js/CmdFrame.js` | always `true` (persistent) | `ShellCmd.handleKey` → LineEditor |
 | `SyncCmdFrame` | `js/CmdFrame.js` | typewriter active, `_busy`, `_asyncPending`, or `!cmd.closed` | typewriter / `cmd.handleKey` |
 | `DialogFrame` | `js/CmdFrame.js` | `!dialog.closed` | dialog's `handleKey`; cursor saved on push, restored on finish |
 
 ```
-Empty stack                     → editor mode, LineEditor handles input
-execute("help")                 → push SyncCmdFrame → handler runs
-                                  → typewriter active → block
-                                  → drain → finish → pop → prompt
-execute("flash")                → push SyncCmdFrame → handler sets _busy=true
-                                  → block on _busy → _busy=false → finish → prompt
-execute("art")                  → push SyncCmdFrame → handler returns Promise
-                                  → block on _asyncPending → promise resolves
-                                  → typewriter active → block → drain → finish → prompt
-execute("menu")                 → push SyncCmdFrame → handler calls _createDialog
-                                  → push DialogFrame(menuDlg) atop SyncCmdFrame
-                                  → SyncCmdFrame done (buried under DialogFrame)
-                                  → dialog I/O until close → pop chain → prompt
-SyncCmdFrame (interactive cmd)   → cmd.select() sets cmd.closed=false
-                                  → frame blocks on !cmd.closed
-                                  → SyncCmdFrame.handleInput routes to cmd.handleKey
-                                  → cmd.close() → cmd.closed=true → frame unblocks → pop
+ShellFrame at bottom         → always present, REPL mode
+execute("help")              → push SyncCmdFrame → handler runs
+                               → typewriter active → block
+                               → drain → finish → pop → ShellFrame shows prompt
+execute("flash")             → push SyncCmdFrame → handler sets _busy=true
+                               → block on _busy → _busy=false → finish → pop → prompt
+execute("art")               → push SyncCmdFrame → handler returns Promise
+                               → block on _asyncPending → promise resolves
+                               → typewriter active → block → drain → finish → pop → prompt
+execute("menu")              → push SyncCmdFrame → handler calls _createDialog
+                               → push DialogFrame(menuDlg) atop SyncCmdFrame
+                               → SyncCmdFrame done (buried under DialogFrame)
+                               → dialog I/O until close → pop chain → ShellFrame shows prompt
+SyncCmdFrame (interactive)   → cmd.select() sets cmd.closed=false
+                               → frame blocks on !cmd.closed
+                               → SyncCmdFrame.handleInput routes to cmd.handleKey
+                               → cmd.close() → cmd.closed=true → frame unblocks → pop → prompt
 ```
 
 ### Execution flow
@@ -177,10 +179,10 @@ User input
 
 | Producer | Path | Animation |
 |---|---|---|
-| **Cmd** (`this.print()`) | `CmdBase.print()` → `shell.print()` → `Typewriter.enqueue()` | Animated (rAF; half=1, wide=2 frame credits) |
+| **Cmd** (`this.print()`) | `CmdBase.print()` → `system.print()` → `Typewriter.enqueue()` | Animated (rAF; half=1, wide=2 frame credits) |
 | **Dialog** (`_writeStr`) | Fills `_buffer[][]` → overlay z=100 | Instant |
 | **Widget** (`putc`) | Fills `_buffer[][]` → overlay z=10 | Instant |
-| **Shell prompt** (`showPrompt`) | `term.write(this.prompt)` (direct, no Typewriter) | Instant |
+| **Shell prompt** (`showPrompt`) | `term.write(system.prompt)` (direct, no Typewriter) | Instant |
 | **term.write()** (direct) | Bypasses Typewriter — renderer sees it next frame | Instant |
 
 ### Prompt scheduling — `_processStack`
@@ -198,21 +200,21 @@ stack and showing the next prompt. Called from every completion path via
 - `_busy` release in flash
 
 The loop pops done frames, starts new frames, and shows prompt only when the
-stack is empty and all blocking conditions clear:
+frame stack is back to the persistent ShellFrame and all blocking conditions
+clear:
 
 ```js
 _processStack() {
     while (true) {
-        while (top.done) pop();
-        if (stack empty) {
-            if (typewriter.isActive()) return;  // wait for drain
-            if (!_busy && !_readLinePending) this.showPrompt();
-            return;
-        }
-        frame = top;
+        while (top.done) { pop(); if (new top && top.persistent) top._pendingActivate = true; }
+        if (stack empty) return;
         if (!frame.started) { frame.start(); continue; }
         if (frame.blocked) return;
-        frame.finish();  // done → loop pops it
+        if (frame.persistent) {
+            if (frame._pendingActivate) { frame.onActivate(); frame._pendingActivate = false; }
+            return;
+        }
+        frame.finish();
     }
 }
 ```
@@ -268,15 +270,6 @@ DialogFrame (owns cursor lifecycle):
 
 Widgets and dialogs are both buffer-overlay elements:
 
-| Property | Widget (z=10) | Dialog (z=100) |
-|---|---|---|
-| Buffer | `WidgetBase._buffer[][]` via `putc()` | `Dialog._buffer[][]` via `_writeStr()` |
-| Draggable | Yes (`startDrag`/`moveDrag`/`endDrag` on WidgetBase) | Yes (built into Dialog) |
-| Position remembered | Yes — `WidgetManager._savedPos` keyed by `constructor.name` | Yes — cursor saved/restored by `DialogFrame` |
-| Reopen at last position | Automatic via manager | Via cursor state on `DialogFrame` |
-| Input handling | None (TSR only) | Yes — `handleKey()` (keyboard); drag via overlay `owner` |
-| Update mechanism | `setInterval()` / `requestAnimationFrame` (self-driven) | Event-driven (keyboard/mouse) |
-
 The only architectural difference: widgets do not intercept user input. They
 update purely via TSR (timers). Dialogs own the input path while open.
 
@@ -294,7 +287,7 @@ Z level.
 
 ## POSIX Compliance Scope
 
-`DemoShell` is a demo shell for a web-based 80×25 terminal emulator, not a
+`SystemManager` + `ShellCmd` (CmdBase subclass) is a demo shell for a web-based 80×25 terminal emulator, not a
 POSIX-compliant shell. The following documents which POSIX features are
 intentionally excluded.
 
@@ -342,6 +335,7 @@ js/cmd/
 ├── date.js            DateCmd
 ├── cowsay.js          Cowsay
 ├── ascii.js           Ascii
+├── ShellCmd.js        Persistent shell REPL (CmdBase subclass, not in help)
 ├── calc.js            Calc        — delegates to safeEval (calc-expr.js)
 ├── menu.js            MenuCmd     — delegates to system.menuCmd()
 ├── mbti.js            MbtiCmd     — interactive MBTI test (select())
@@ -366,7 +360,7 @@ js/cmd/
 
 | Member | Purpose |
 |---|---|
-| `constructor(shell)` | Receives DemoShell instance; `this.term`, `this.system`, `this.shell` available |
+| `constructor()` | No parameters — `this.system` / `this.term` from `SystemManager.instance` |
 | `execute(args)` | Command logic, called with parsed arg array |
 | `print(text)` | Enqueues text to Typewriter via `this.system.print()` |
 | `readLine(callback)` | Request next line of input; callback receives trimmed string |
@@ -377,7 +371,7 @@ js/cmd/
 | `static get commandName()` | Command name string, e.g. `'cowsay'` |
 | `static get help()` | Description shown in `help` output |
 | `static get menu()` | Menu description or `null` to hide from menu |
-| `static openMenuDialog(system)` | (optional) Creates a menu dialog; receives `SystemManager` |
+| `static openMenuDialog()` | (optional) Creates a menu dialog; uses `SystemManager.instance` |
 
 ### CmdBase.select() — 2D grid selection
 
@@ -417,18 +411,19 @@ No wrap-around, no cross-dimension movement.
 **Custom move signature:** `(data, row, col, options)` → `{row, col}`
 **Custom render signature:** `(selRow, selCol, options, term)` → (writes to term)
 
-**Registration flow** (`shell.js` iterates `js/cmd/index.js` exports; `cmdList`/`menuItems` owned by `system`):
+**Registration flow** (`SystemManager._registerCommands` iterates `js/cmd/index.js` exports):
 
 ```js
-_registerCommands() {
+_registerCommands(cmdModule) {
     for (const Cls of Object.values(cmdModule)) {
         if (typeof Cls !== 'function' || !Cls.commandName) continue;
-        const cmd = new Cls(this);
+        const cmd = new Cls();
         this.commands[Cls.commandName] = cmd.execute.bind(cmd);
-        this.system.cmdList.push({ name: Cls.commandName, help: Cls.help });
-        if (Cls.menu) this.system.menuItems.push({ name: Cls.commandName, desc: Cls.menu });
+        this.cmdList.push({ name: Cls.commandName, help: Cls.help });
+        if (Cls.menu) this.menuItems.push({ name: Cls.commandName, desc: Cls.menu });
     }
-    this.system.cmdList.sort((a, b) => a.name.localeCompare(b.name));
+    this.cmdList.sort((a, b) => a.name.localeCompare(b.name));
+    this.menuItems.sort((a, b) => a.name.localeCompare(b.name));
 }
 ```
 
@@ -442,14 +437,14 @@ Commands that need multi-line interaction (e.g. `quiz`) use `readLine`:
 ```
 CmdBase.readLine(callback)
   → system.readLine(callback)    // sets this._readLinePending + this._readLineBuffer = ''
-  → handleInput checks _readLinePending (priority 3, see Shell Architecture)
+  → handleInput checks _readLinePending (priority 2, see Shell Architecture)
   → characters accumulated in _readLineBuffer (NOT this.line)
   → Enter: callback(_readLineBuffer.trim()), then _tick()
-  → Ctrl+C: cancel, showPrompt()
+  → Ctrl+C: cancel, showPrompt via _tick()
 ```
 
 **Critical rule:** `_readLineBuffer` is completely independent from `this.line`.
-A cmd using `readLine` must NOT access `this.line` or `this.shell.line` — the
+A cmd using `readLine` must NOT access `this.line` or `this.system.editor.line` — the
 input arrives only through the callback parameter.
 
 ### Typewriter — animated command output
@@ -585,11 +580,10 @@ draw() {
 
 ### System
 
-- `js/system.js`: SystemManager (typewriter, editor, mouse/drag, dialog positions, frame stack, execute, input routing) + WidgetManager
-- `js/shell.js`: DemoShell — command registry, prompt, thin delegates to SystemManager
+- `js/system.js`: SystemManager (singleton, typewriter, editor, mouse/drag, dialog positions, frame stack, execute, input routing, command registry, prompt) + WidgetManager
 - `js/LineEditor.js`: Line editing, history, tab completion
 - `js/typewriter.js`: rAF-based animated command output
-- `js/CmdFrame.js`: Frame stack types (CmdFrame, SyncCmdFrame, DialogFrame — cursor save/restore in `DialogFrame._saveCursor`/`finish`)
+- `js/CmdFrame.js`: Frame stack types (CmdFrame, SyncCmdFrame, DialogFrame, ShellFrame — cursor save/restore in `DialogFrame._saveCursor`/`finish`)
 - `js/select-grid.js`: Grid navigation helpers (`defaultGridMove`, `displayWidth`)
 
 ### Dialogs (`js/dialog/`)
@@ -603,7 +597,8 @@ draw() {
 ### Commands (`js/cmd/`)
 
 - `index.js`: Barrel export for auto-registration
-- `CmdBase.js`: Command base class
+- `CmdBase.js`: Command base class (no constructor params — `this.system` from singleton)
+- `ShellCmd.js`: Persistent shell REPL (CmdBase subclass)
 - `WidgetBase.js`: Overlay lifecycle, `_buffer`, `putc()`
 - `widgets/ClockWidget.js`: TSR clock (8 cells, 1s interval)
 - `widgets/DVDWidget.js`: Bouncing DVD logo (7×3, 120ms interval)

@@ -1,4 +1,5 @@
 import { CmdBase } from './CmdBase.js';
+import { SystemManager } from '../system.js';
 import { safeEval } from '../calc-expr.js';
 import { red } from '../sgr.js';
 import { InputDialog, ShowDialog } from '../dialog/index.js';
@@ -21,7 +22,8 @@ export class Calc extends CmdBase {
     static get menu() { return 'Simple Calculator'; }
     static get usage() { return 'calc <expression>'; }
 
-    static openMenuDialog(system) {
+    static openMenuDialog() {
+        const system = SystemManager.instance;
         system._createDialog(InputDialog, 'calc', {
             title: '請輸入算式',
             prompt: '算式：',

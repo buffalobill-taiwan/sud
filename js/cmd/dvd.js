@@ -9,7 +9,7 @@ export class DvdCmd extends CmdBase {
             this.print('DVD stopped\n');
             return;
         }
-        this._dvd = new DVDWidget(this.term);
+        this._dvd = new DVDWidget();
         this.system.widgetManager.add(this._dvd);
         this.print('DVD started\n');
     }

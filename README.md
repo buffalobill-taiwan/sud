@@ -44,7 +44,7 @@ dialogs, and TSR-style widgets.
 | **Rendering** | Pre-created 80×25 `<span>` grid; dirty-row updates via `.textContent` / `.className` / `.style.cssText` |
 | **Buffer** | 2D cell array (`{ch, fg, bg, bold, italic, …, width}`) + scrollback; CJK uses `width: 2` + continuation cell |
 | **Overlays** | Widgets (z=10) and dialogs (z=100) own separate buffers; `Renderer._blendOverlays` composites at render time |
-| **Shell** | `DemoShell` (command registry, prompt, delegates to system) + `SystemManager` (frame stack, execute, input routing, typewriter, editor, widgets, mouse, dialogs) |
+| **Shell** | `SystemManager` (singleton: frame stack, execute, input routing, typewriter, editor, widgets, dialogs, command registry, prompt) + `ShellCmd` (persistent CmdBase subclass, REPL) |
 | **Dialogs** | Buffer-based rendering in `js/dialog/`; `DialogFrame` saves/restores cursor on open/close |
 | **Input** | `keydown` on `document` (always captured) + hidden `<textarea>` for IME |
 | **Focus** | Automatic refocus on `keyup` (ptt.cc pattern) |
@@ -109,7 +109,7 @@ Open `index.html` in a modern browser, or visit the live demo:
 ```
 js/
 ├── Screen.js Parser.js Renderer.js terminal.js   # Terminal core
-├── shell.js system.js CmdFrame.js                # Shell + system
+├── system.js CmdFrame.js                          # System (singleton) + frame stack
 ├── LineEditor.js typewriter.js                   # Input editing + output
 ├── dialog/                                       # Dialog framework
 ├── cmd/                                          # Demo commands + widgets

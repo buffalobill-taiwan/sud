@@ -1,24 +1,21 @@
+import { SystemManager } from '../../system.js';
 import { WidgetBase } from '../WidgetBase.js';
 
-const COLORS = [1, 2, 3, 4, 5, 6, 9, 10, 11, 12, 13, 14];
-const LOGO = [
-    '       ',
-    ' D V D ',
-    '       ',
-];
-
 export class DVDWidget extends WidgetBase {
-    constructor(term) {
-        super(term);
+    constructor() {
+        super();
         this._w = 7;
         this._h = 3;
+        const term = SystemManager.instance.term;
         const cols = term.cols;
         const rows = term.rows;
-        this.setPosition(Math.floor((cols - this._w) / 2), Math.floor((rows - this._h) / 2));
-        this._dx = 1;
-        this._dy = 1;
-        this._color = 1;
+        this._vy = 1;
+        this._vx = 1;
+        this._bg = 0;
+        this._fg = 3;
         this._intervalId = null;
+        this._x = Math.floor((cols - this._w) / 2);
+        this._y = Math.floor((rows - this._h) / 2);
     }
 
     start() {
@@ -35,74 +32,29 @@ export class DVDWidget extends WidgetBase {
         super.stop();
     }
 
-    getSaveState() {
-        return {
-            ...super.getSaveState(),
-            dx: this._dx,
-            dy: this._dy,
-            color: this._color,
-        };
-    }
-
-    restoreSaveState(state) {
-        super.restoreSaveState(state);
-        this._dx = state.dx;
-        this._dy = state.dy;
-        this._color = state.color;
-    }
-
-    startDrag(col, row) {
-        if (this._intervalId) {
-            clearInterval(this._intervalId);
-            this._intervalId = null;
-        }
-        super.startDrag(col, row);
-    }
-
-    endDrag() {
-        if (!this._intervalId) {
-            this._intervalId = setInterval(() => this._tick(), 120);
-        }
-    }
-
     _tick() {
-        const oldY = this._y;
-        const oldX = this._x;
-
-        let nx = this._x + this._dx;
-        let ny = this._y + this._dy;
-
-        let bounced = false;
-        if (nx < 0 || nx + this._w > this.term.cols) {
-            this._dx = -this._dx;
-            nx = this._x + this._dx;
-            bounced = true;
-        }
-        if (ny < 0 || ny + this._h > this.term.rows) {
-            this._dy = -this._dy;
-            ny = this._y + this._dy;
-            bounced = true;
-        }
-
-        if (bounced) {
-            this._color = COLORS[Math.floor(Math.random() * COLORS.length)];
-        }
-
-        this.setPosition(nx, ny);
-
-        for (let r = oldY; r < oldY + this._h; r++) {
-            if (r >= 0 && r < this.term.rows) this.term.markRowDirty(r);
-        }
-
+        const term = SystemManager.instance.term;
+        const cols = term.cols;
+        const rows = term.rows;
+        this._x += this._vx;
+        this._y += this._vy;
+        if (this._x + this._w >= cols) { this._x = cols - this._w; this._vx = -this._vx; this._fg = Math.floor(Math.random() * 7) + 1; }
+        if (this._x <= 0) { this._x = 0; this._vx = -this._vx; this._fg = Math.floor(Math.random() * 7) + 1; }
+        if (this._y + this._h >= rows) { this._y = rows - this._h; this._vy = -this._vy; this._fg = Math.floor(Math.random() * 7) + 1; }
+        if (this._y <= 0) { this._y = 0; this._vy = -this._vy; this._fg = Math.floor(Math.random() * 7) + 1; }
+        this.setPosition(this._x, this._y);
         this.draw();
     }
 
     draw() {
-        for (let r = 0; r < this._h; r++) {
-            for (let c = 0; c < this._w; c++) {
-                const ch = LOGO[r][c];
-                const fg = (ch === 'D' || ch === 'V') ? 0 : this._color;
-                this.putc(c, r, ch, fg, this._color);
+        const logo = [
+            ['D', 'V', 'D'],
+            [' ', 'L', 'o'],
+            ['g', 'o', '!'],
+        ];
+        for (let r = 0; r < 3; r++) {
+            for (let c = 0; c < 3; c++) {
+                this.putc(c + 2, r, logo[r][c], this._fg, this._bg);
             }
         }
     }

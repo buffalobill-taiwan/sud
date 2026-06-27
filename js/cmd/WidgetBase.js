@@ -1,9 +1,10 @@
+import { SystemManager } from '../system.js';
 import { makeCell, defaultAttr, OverlayZ, createEmptyBuffer, makeOverlayGetCell } from '../sgr.js';
 import { addDragMethods, markDirtyRows } from '../drag.js';
 
 export class WidgetBase {
-    constructor(term) {
-        this.term = term;
+    constructor() {
+        this.term = SystemManager.instance.term;
         this._y = 0;
         this._x = 0;
         this._w = 0;
@@ -89,5 +90,4 @@ export class WidgetBase {
         this._buffer[y][x] = makeCell(ch, attr);
         this.term.markRowDirty(this._y + y);
     }
-
 }

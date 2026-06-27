@@ -1,4 +1,5 @@
 import { CmdBase } from './CmdBase.js';
+import { SystemManager } from '../system.js';
 import { cyan, bold, green, red, white } from '../sgr.js';
 import { InputDialog, ShowDialog } from '../dialog/index.js';
 
@@ -27,7 +28,8 @@ export class Quiz extends CmdBase {
     static get help() { return 'Math quiz'; }
     static get menu() { return 'Math Quiz'; }
 
-    static openMenuDialog(system) {
+    static openMenuDialog() {
+        const system = SystemManager.instance;
         let a = Math.floor(Math.random() * 9) + 1;
         let b = Math.floor(Math.random() * 9) + 1;
         const ops = ['+', '-', '×'];

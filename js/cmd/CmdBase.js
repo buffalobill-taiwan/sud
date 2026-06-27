@@ -1,13 +1,13 @@
+import { SystemManager } from '../system.js';
 import { red, bold, yellow, CURSOR_SHOW, CURSOR_HIDE } from '../sgr.js';
 import { ShowDialog } from '../dialog/ShowDialog.js';
 import { InputDialog } from '../dialog/InputDialog.js';
 import { defaultGridMove, defaultGridRender } from '../select-grid.js';
 
 export class CmdBase {
-    constructor(shell) {
-        this.shell = shell;
-        this.system = shell.system;
-        this.term = shell.term;
+    constructor() {
+        this.system = SystemManager.instance;
+        this.term = this.system.term;
         this.closed = true;
         this.isTyping = false;
         this._cbSession = 0;
