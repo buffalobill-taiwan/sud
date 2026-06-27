@@ -6,12 +6,12 @@ export class DvdCmd extends CmdBase {
         if (this._dvd) {
             this.system.widgetManager.remove(this._dvd);
             this._dvd = null;
-            this.shell.print('DVD stopped\n');
+            this.print('DVD stopped\n');
             return;
         }
-        this._dvd = new DVDWidget(this.shell);
+        this._dvd = new DVDWidget(this.term);
         this.system.widgetManager.add(this._dvd);
-        this.shell.print('DVD started\n');
+        this.print('DVD started\n');
     }
 
     static get commandName() { return 'dvd'; }

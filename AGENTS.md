@@ -225,6 +225,8 @@ _processStack() {
 | Instant output | `this.term.write(text)` | Bypasses Typewriter — use with care |
 | Interactive input | `this.readLine(callback)` | Callback receives trimmed string; frame blocks via `_readLinePending` |
 | **Interactive select** | `this.select()` | Sets `cmd.closed=false`; SyncCmdFrame routes keys via `cmd.handleKey` |
+| Busy-wait / async | `this.holdBusy()` / `this.releaseBusy()` | Frame blocks via `_busy` until released |
+| Cancel-safe async | `this.abortGeneration` | Compare on re-entry to detect Ctrl+C abort |
 | Create overlay | `WidgetBase.start()` | Own buffer, composited by renderer |
 | Async handler | `async execute()` | SyncCmdFrame blocks on `_asyncPending` until Promise resolves |
 
@@ -333,8 +335,8 @@ unaddressed:
 ```
 js/cmd/
 ├── index.js           Barrel export — shell auto-registers all exported command classes
-├── CmdBase.js         execute(args) | print(text) | readLine(cb) | select() | prompt()
-├── help.js            Help        — iterates shell.cmdList dynamically
+├── CmdBase.js         execute(args) | print(text) | readLine(cb) | select() | holdBusy/releaseBusy | cmdList
+├── help.js            Help        — iterates this.cmdList (via CmdBase convenience)
 ├── clear.js           Clear
 ├── echo.js            Echo
 ├── date.js            DateCmd
@@ -364,13 +366,18 @@ js/cmd/
 
 | Member | Purpose |
 |---|---|
-| `constructor(shell)` | Receives DemoShell instance; `this.term` and `this.system` available |
+| `constructor(shell)` | Receives DemoShell instance; `this.term`, `this.system`, `this.shell` available |
 | `execute(args)` | Command logic, called with parsed arg array |
-| `print(text)` | Enqueues text to shell's Typewriter |
+| `print(text)` | Enqueues text to Typewriter via `this.system.print()` |
 | `readLine(callback)` | Request next line of input; callback receives trimmed string |
+| `holdBusy()` | Hold busy flag (for async/busy-wait commands like flash, sleep) |
+| `releaseBusy()` | Release busy flag |
+| `get abortGeneration()` | Monotonically increasing counter for Ctrl+C detection |
+| `get cmdList()` | `this.system.cmdList` — registered command list for help etc. |
 | `static get commandName()` | Command name string, e.g. `'cowsay'` |
 | `static get help()` | Description shown in `help` output |
 | `static get menu()` | Menu description or `null` to hide from menu |
+| `static openMenuDialog(system)` | (optional) Creates a menu dialog; receives `SystemManager` |
 
 ### CmdBase.select() — 2D grid selection
 
@@ -410,7 +417,7 @@ No wrap-around, no cross-dimension movement.
 **Custom move signature:** `(data, row, col, options)` → `{row, col}`
 **Custom render signature:** `(selRow, selCol, options, term)` → (writes to term)
 
-**Registration flow** (`shell.js` iterates `js/cmd/index.js` exports):
+**Registration flow** (`shell.js` iterates `js/cmd/index.js` exports; `cmdList`/`menuItems` owned by `system`):
 
 ```js
 _registerCommands() {
@@ -418,9 +425,10 @@ _registerCommands() {
         if (typeof Cls !== 'function' || !Cls.commandName) continue;
         const cmd = new Cls(this);
         this.commands[Cls.commandName] = cmd.execute.bind(cmd);
-        this.cmdList.push({ name: Cls.commandName, help: Cls.help });
-        if (Cls.menu) this.menuItems.push({ name: Cls.commandName, desc: Cls.menu });
+        this.system.cmdList.push({ name: Cls.commandName, help: Cls.help });
+        if (Cls.menu) this.system.menuItems.push({ name: Cls.commandName, desc: Cls.menu });
     }
+    this.system.cmdList.sort((a, b) => a.name.localeCompare(b.name));
 }
 ```
 
@@ -433,7 +441,7 @@ Commands that need multi-line interaction (e.g. `quiz`) use `readLine`:
 
 ```
 CmdBase.readLine(callback)
-  → shell.readLine(callback)    // sets this._readLinePending + this._readLineBuffer = ''
+  → system.readLine(callback)    // sets this._readLinePending + this._readLineBuffer = ''
   → handleInput checks _readLinePending (priority 3, see Shell Architecture)
   → characters accumulated in _readLineBuffer (NOT this.line)
   → Enter: callback(_readLineBuffer.trim()), then _tick()
@@ -457,7 +465,7 @@ input arrives only through the callback parameter.
 | `seqtext` pair | sum of text credits | SGR prefix + following text batched atomically |
 | Newline | 1 credit (as char) | `\n` |
 
-- `CmdBase.print()` → `shell.print()` → `Typewriter.enqueue()`
+- `CmdBase.print()` → `system.print()` → `Typewriter.enqueue()`
 - Shell defers prompt until typewriter drain (via `_tick` → `_processStack`)
 - Only `Ctrl+C` passes through during animation (aborts + shows prompt)
 - Dialog rendering, widget buffers, and shell prompt bypass typewriter

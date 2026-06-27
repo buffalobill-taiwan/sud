@@ -21,8 +21,8 @@ export class Calc extends CmdBase {
     static get menu() { return 'Simple Calculator'; }
     static get usage() { return 'calc <expression>'; }
 
-    static openMenuDialog(shell, menuDlg) {
-        shell.system._createDialog(InputDialog, 'calc', {
+    static openMenuDialog(system) {
+        system._createDialog(InputDialog, 'calc', {
             title: '請輸入算式',
             prompt: '算式：',
             footer: 'Enter Confirm  ESC Back',
@@ -32,7 +32,7 @@ export class Calc extends CmdBase {
                 try { msg = String(safeEval(expr)); }
                 catch (e) { msg = red('Error:') + ' ' + (e.message || 'invalid expression'); }
                 setTimeout(() => {
-                    shell.system._createDialog(ShowDialog, 'show', { message: msg, onExit: () => {} });
+                    system._createDialog(ShowDialog, 'show', { message: msg, onExit: () => {} });
                 }, 0);
             },
             onCancel: () => {},

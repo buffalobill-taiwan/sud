@@ -4,7 +4,7 @@ import { bold, yellow } from '../sgr.js';
 export class Help extends CmdBase {
     execute(args) {
         this.print(bold(yellow('Available commands:')) + '\n');
-        for (const { name, help } of this.shell.cmdList) {
+        for (const { name, help } of this.cmdList) {
             this.print('  ' + name.padEnd(11) + help + '\n');
         }
     }

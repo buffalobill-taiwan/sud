@@ -25,6 +25,9 @@ export class SystemManager {
             onShowPrompt: () => this._tick(),
         });
 
+        this.cmdList = [];
+        this.menuItems = [];
+
         this._dialogRestoreHooks = [];
         this._dialogPositions = {};
 
@@ -301,7 +304,7 @@ export class SystemManager {
             onSelect: (item) => {
                 const inst = this.shell._cmdInstances[item.name];
                 if (inst && inst.constructor.openMenuDialog) {
-                    inst.constructor.openMenuDialog(this.shell, menuDlg);
+                    inst.constructor.openMenuDialog(this);
                     return;
                 }
                 this._pushFrame(new SyncCmdFrame(this.shell, item.name, [], inst));
@@ -309,7 +312,7 @@ export class SystemManager {
                 return 'close';
             },
             onCancel: () => {}
-        }, this.shell.menuItems);
+        }, this.menuItems);
         this.menuDialog = menuDlg;
     }
 }

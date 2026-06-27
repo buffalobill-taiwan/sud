@@ -8,8 +8,6 @@ export class DemoShell {
         this.prompt = '$ ';
         this.running = false;
         this.commands = {};
-        this.menuItems = [];
-        this.cmdList = [];
 
         this.system = new SystemManager(this);
         this._registerCommands();
@@ -41,11 +39,11 @@ export class DemoShell {
             const menu = Cls.menu;
             this._cmdInstances[name] = cmd;
             this.commands[name] = cmd.execute.bind(cmd);
-            this.cmdList.push({ name, help });
-            if (menu) this.menuItems.push({ name, desc: menu });
+            this.system.cmdList.push({ name, help });
+            if (menu) this.system.menuItems.push({ name, desc: menu });
         }
-        this.cmdList.sort((a, b) => a.name.localeCompare(b.name));
-        this.menuItems.sort((a, b) => a.name.localeCompare(b.name));
+        this.system.cmdList.sort((a, b) => a.name.localeCompare(b.name));
+        this.system.menuItems.sort((a, b) => a.name.localeCompare(b.name));
     }
 
     start() {

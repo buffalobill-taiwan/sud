@@ -14,12 +14,17 @@ export class CmdBase {
         this._selectResolve = null;
     }
     execute(args) {}
-    print(text) { this.shell.print(text); }
-    readLine(callback) { this.shell.readLine(callback); }
+    print(text) { this.system.print(text); }
+    readLine(callback) { this.system.readLine(callback); }
     _afterDrain(callback) {
         const cb = () => { this.system.typewriter.removeOnDrain(cb); callback(); };
         this.system.typewriter.onDrain(cb);
     }
+    holdBusy() { this.system.holdBusy(); }
+    releaseBusy() { this.system.releaseBusy(); }
+    get abortGeneration() { return this.system.abortGeneration; }
+    get cmdList() { return this.system.cmdList; }
+
     static get commandName() { return ''; }
     static get help() { return ''; }
     static get menu() { return null; }

@@ -2,9 +2,8 @@ import { makeCell, defaultAttr, OverlayZ, createEmptyBuffer, makeOverlayGetCell 
 import { addDragMethods, markDirtyRows } from '../drag.js';
 
 export class WidgetBase {
-    constructor(shell) {
-        this.shell = shell;
-        this.term = shell.term;
+    constructor(term) {
+        this.term = term;
         this._y = 0;
         this._x = 0;
         this._w = 0;

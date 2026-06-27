@@ -8,7 +8,7 @@ export class ClockCmd extends CmdBase {
             this._clock = null;
             return;
         }
-        this._clock = new ClockWidget(this.shell);
+        this._clock = new ClockWidget(this.term);
         this.system.widgetManager.add(this._clock);
     }
     static get commandName() { return 'clock'; }

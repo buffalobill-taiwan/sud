@@ -8,12 +8,12 @@ const LOGO = [
 ];
 
 export class DVDWidget extends WidgetBase {
-    constructor(shell) {
-        super(shell);
+    constructor(term) {
+        super(term);
         this._w = 7;
         this._h = 3;
-        const cols = shell.term.cols;
-        const rows = shell.term.rows;
+        const cols = term.cols;
+        const rows = term.rows;
         this.setPosition(Math.floor((cols - this._w) / 2), Math.floor((rows - this._h) / 2));
         this._dx = 1;
         this._dy = 1;

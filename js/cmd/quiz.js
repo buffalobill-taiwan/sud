@@ -27,7 +27,7 @@ export class Quiz extends CmdBase {
     static get help() { return 'Math quiz'; }
     static get menu() { return 'Math Quiz'; }
 
-    static openMenuDialog(shell, menuDlg) {
+    static openMenuDialog(system) {
         let a = Math.floor(Math.random() * 9) + 1;
         let b = Math.floor(Math.random() * 9) + 1;
         const ops = ['+', '-', '×'];
@@ -35,7 +35,7 @@ export class Quiz extends CmdBase {
         if (op === '-' && a < b) b = [a, a = b][0];
         const answer = op === '+' ? a + b : op === '-' ? a - b : a * b;
 
-        shell.system._createDialog(InputDialog, 'quiz', {
+        system._createDialog(InputDialog, 'quiz', {
             title: 'Quiz',
             prompt: `${a} ${op} ${b} = ?`,
             footer: 'Enter Answer  ESC Back',
@@ -49,7 +49,7 @@ export class Quiz extends CmdBase {
                     msg = bold(red('✗ Wrong!')) + '  Answer: ' + bold(white('' + answer));
                 }
                 setTimeout(() => {
-                    shell.system._createDialog(ShowDialog, 'show', { message: msg, onExit: () => {} });
+                    system._createDialog(ShowDialog, 'show', { message: msg, onExit: () => {} });
                 }, 0);
             },
             onCancel: () => {},

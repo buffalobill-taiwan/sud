@@ -7,11 +7,11 @@ export class Sleep extends CmdBase {
             this.error('invalid number');
             return;
         }
-        const gen = this.shell.abortGeneration;
-        this.shell.holdBusy();
+        const gen = this.abortGeneration;
+        this.holdBusy();
         setTimeout(() => {
-            if (gen !== this.shell.abortGeneration) return;
-            this.shell.releaseBusy();
+            if (gen !== this.abortGeneration) return;
+            this.releaseBusy();
         }, seconds * 1000);
     }
     static get commandName() { return 'sleep'; }
