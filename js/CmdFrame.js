@@ -119,7 +119,7 @@ export class ShellFrame extends CmdFrame {
     constructor(cmd) {
         super();
         this.cmd = cmd;
-        this._pendingActivate = false;
+        this._pendingActivate = true;
     }
 
     get persistent() { return true; }
