@@ -12,7 +12,7 @@ export class AnimeCmd extends CmdBase {
 
         // Pre-render all frames with cursor-up prefix for in-place update
         const rendered = frames.map(pixels => {
-            let out = `\x1B[${termRows}A`;
+            let out = `\x1B[${termRows + 1}A`;  // +1 for the hint line
             for (let ty = 0; ty < termRows; ty++) {
                 for (let x = 0; x < cols; x++) {
                     const fg = pixels[ty * 2 * cols + x];
@@ -21,11 +21,12 @@ export class AnimeCmd extends CmdBase {
                 }
                 out += '\n';
             }
+            out += '\x1B[2mPress Ctrl+C to stop\x1B[0m\n';
             return out;
         });
 
         // Print frame 0 without cursor-up (first output, like art command)
-        let firstFrame = '';
+        let firstFrame = '\x1B[?25l';  // hide cursor
         const pixels0 = frames[0];
         for (let ty = 0; ty < termRows; ty++) {
             for (let x = 0; x < cols; x++) {
@@ -35,6 +36,7 @@ export class AnimeCmd extends CmdBase {
             }
             firstFrame += '\n';
         }
+        firstFrame += '\x1B[2mPress Ctrl+C to stop\x1B[0m\n';
         this.print(firstFrame);
 
         this.holdBusy();
@@ -47,6 +49,7 @@ export class AnimeCmd extends CmdBase {
             const interval = setInterval(() => {
                 if (gen !== this.abortGeneration) {
                     clearInterval(interval);
+                    this.term.write('\x1B[?25h');  // restore cursor
                     this.releaseBusy();
                     return;
                 }
