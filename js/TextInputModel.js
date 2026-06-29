@@ -1,4 +1,29 @@
 /**
+ * Parse a single CSI / SS3 escape sequence from the start of `data`.
+ * Returns { final, params, consumed } or null if not an escape sequence.
+ *
+ *   final    — the final byte character (e.g. 'A', 'B', '~')
+ *   params   — parameter string before final (e.g. '1;5', '3')
+ *   consumed — number of characters consumed from data
+ */
+export function parseCSI(data) {
+    if (!data || data.charCodeAt(0) !== 0x1B || data.length < 2) return null;
+
+    if (data[1] === 'O' && data.length >= 3) {
+        return { final: data[2], params: '', consumed: 3 };
+    }
+
+    if (data[1] === '[') {
+        let j = 2;
+        while (j < data.length && data.charCodeAt(j) >= 0x20 && data.charCodeAt(j) <= 0x3F) j++;
+        if (j >= data.length) return null; // incomplete
+        return { final: data[j], params: data.slice(2, j), consumed: j + 1 };
+    }
+
+    return null;
+}
+
+/**
  * TextInputModel — pure data model for a single-line text input.
  *
  * No DOM, no terminal, no output.  Consumers drive rendering.

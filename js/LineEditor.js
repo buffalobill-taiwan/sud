@@ -4,7 +4,7 @@
  * Owns terminal output only: _redraw(), cursor escape sequences,
  * history management, and tab completion display.
  */
-import { TextInputModel } from './TextInputModel.js';
+import { TextInputModel, parseCSI } from './TextInputModel.js';
 
 export class LineEditor {
     constructor(term, callbacks = {}) {
@@ -155,7 +155,13 @@ export class LineEditor {
                 consumed = true; i++; continue;
             }
             if (code === 0x1B) {                          // Escape sequence
-                i += this._handleEscape(data.slice(i));
+                const csi = parseCSI(data.slice(i));
+                if (csi) {
+                    this._handleCSIFinal(csi.final, csi.params);
+                    i += csi.consumed;
+                } else {
+                    i += 2; // lone ESC or unknown
+                }
                 consumed = true; continue;
             }
             if (code >= 0x20) {                           // Printable
@@ -173,22 +179,6 @@ export class LineEditor {
             i++;
         }
         return consumed;
-    }
-
-    _handleEscape(data) {
-        if (data.length < 2) return 1;
-        if (data[1] === 'O' && data.length >= 3) {
-            this._handleCSIFinal(data[2], '');
-            return 3;
-        }
-        if (data[1] === '[') {
-            let j = 2;
-            while (j < data.length && data.charCodeAt(j) >= 0x20 && data.charCodeAt(j) <= 0x3F) j++;
-            if (j >= data.length) return data.length;
-            this._handleCSIFinal(data[j], data.slice(2, j));
-            return j + 1;
-        }
-        return 2;
     }
 
     _handleCSIFinal(final, params) {

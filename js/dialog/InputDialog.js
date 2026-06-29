@@ -2,7 +2,7 @@ import { Dialog } from './Dialog.js';
 import { makeCursorCell } from '../sgr.js';
 import { centeredDialogPos } from './position.js';
 import { DEFAULT_DIALOG_WIDTH } from '../constants.js';
-import { TextInputModel } from '../TextInputModel.js';
+import { TextInputModel, parseCSI } from '../TextInputModel.js';
 
 export class InputDialog extends Dialog {
     constructor(term, opts) {
@@ -70,13 +70,11 @@ export class InputDialog extends Dialog {
             }
             if (code === 0x1B) {
                 // Single ESC = cancel; ESC [ / ESC O = cursor/edit sequence
-                if (data.length === 1 || (data[i + 1] !== '[' && data[i + 1] !== 'O')) {
-                    this._onCancel();
-                    return 'close';
-                }
-                const adv = this._handleEscape(data.slice(i));
-                i += adv - 1;
-                changed = 'content';  // cursor may have moved; re-render
+                const csi = parseCSI(data.slice(i));
+                if (!csi) { this._onCancel(); return 'close'; }
+                this._handleCSIFinal(csi.final, csi.params);
+                i += csi.consumed - 1;
+                changed = 'content';
                 continue;
             }
 
@@ -97,22 +95,6 @@ export class InputDialog extends Dialog {
         }
 
         return changed;
-    }
-
-    _handleEscape(data) {
-        if (data.length < 2) return 1;
-        if (data[1] === 'O' && data.length >= 3) {
-            this._handleCSIFinal(data[2], '');
-            return 3;
-        }
-        if (data[1] === '[') {
-            let j = 2;
-            while (j < data.length && data.charCodeAt(j) >= 0x20 && data.charCodeAt(j) <= 0x3F) j++;
-            if (j >= data.length) return data.length;
-            this._handleCSIFinal(data[j], data.slice(2, j));
-            return j + 1;
-        }
-        return 2;
     }
 
     _handleCSIFinal(final, params) {

@@ -1,6 +1,7 @@
 import { Dialog } from './Dialog.js';
 import { _writeStr } from './write.js';
 import { centeredDialogPos } from './position.js';
+import { parseCSI } from '../TextInputModel.js';
 
 export class MenuDialog extends Dialog {
     constructor(term, items, opts) {
@@ -27,7 +28,7 @@ export class MenuDialog extends Dialog {
             if (idx < this.items.length) {
                 this._drawItem(idx, r);
             } else {
-                _writeStr(this._buffer, r, 0, '│' + ' '.repeat(this.width - 3));
+                _writeStr(this._buffer, r, 0, '│' + ' '.repeat(this.width - 3), this.width);
             }
         }
         this._drawScrollBar();
@@ -78,49 +79,56 @@ export class MenuDialog extends Dialog {
     }
 
     _onKey(data) {
-        if (data.length > 1) {
-            if (data === '\x1B[A') {
-                if (this.selected > 0) {
-                    this.selected--;
-                    if (this.selected < this.scrollOffset) {
-                        this.scrollOffset = this.selected;
-                        this.refreshContent();
-                    } else {
-                        this._drawItem(this.selected, 3 + this.selected - this.scrollOffset);
-                        this._drawItem(this.selected + 1, 3 + this.selected + 1 - this.scrollOffset);
-                        this._drawScrollBar();
-                        this._markDirty();
-                    }
-                }
-                return;
-            }
-            if (data === '\x1B[B') {
-                if (this.selected < this.items.length - 1) {
-                    this.selected++;
-                    if (this.selected >= this.scrollOffset + this.visibleCount) {
-                        this.scrollOffset = this.selected - this.visibleCount + 1;
-                        this.refreshContent();
-                    } else {
-                        this._drawItem(this.selected - 1, 3 + this.selected - 1 - this.scrollOffset);
-                        this._drawItem(this.selected, 3 + this.selected - this.scrollOffset);
-                        this._drawScrollBar();
-                        this._markDirty();
-                    }
-                }
-                return;
-            }
-            return;
-        }
-
         const code = data.charCodeAt(0);
-        if (code === 0x0D || code === 0x0A) {
+
+        if (code === 0x0D || code === 0x0A) {               // Enter
             const result = this._onSelect(this.items[this.selected]);
             if (result === 'close') return 'close';
             return;
         }
-        if (code === 0x1B || code === 0x03) {
-            this._onCancel();
-            return 'close';
+        if (code === 0x1B || code === 0x03) {               // ESC / Ctrl+C
+            const csi = parseCSI(data);
+            if (!csi) { this._onCancel(); return 'close'; }
+
+            const { final, params } = csi;
+            if (final === 'A' || (final === '~' && params === '5')) { // ↑ / PageUp
+                this._moveBy(-1);
+            } else if (final === 'B' || (final === '~' && params === '6')) { // ↓ / PageDown
+                this._moveBy(1);
+            } else if (final === 'H' || (final === '~' && (params === '1' || params === '7'))) { // Home
+                this._moveTo(0);
+            } else if (final === 'F' || (final === '~' && (params === '4' || params === '8'))) { // End
+                this._moveTo(this.items.length - 1);
+            }
+            return;
         }
+    }
+
+    _moveBy(delta) {
+        const next = this.selected + delta;
+        if (next < 0 || next >= this.items.length) return;
+        const prev = this.selected;
+        this.selected = next;
+
+        if (next < this.scrollOffset) {
+            this.scrollOffset = next;
+            this.refreshContent();
+        } else if (next >= this.scrollOffset + this.visibleCount) {
+            this.scrollOffset = next - this.visibleCount + 1;
+            this.refreshContent();
+        } else {
+            // Only redraw the two affected rows
+            this._drawItem(prev, 3 + prev - this.scrollOffset);
+            this._drawItem(next, 3 + next - this.scrollOffset);
+            this._drawScrollBar();
+            this._markDirty();
+        }
+    }
+
+    _moveTo(idx) {
+        if (idx === this.selected) return;
+        this.selected = idx;
+        this.scrollOffset = Math.min(idx, Math.max(0, this.items.length - this.visibleCount));
+        this.refreshContent();
     }
 }
