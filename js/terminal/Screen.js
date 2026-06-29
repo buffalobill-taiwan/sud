@@ -42,8 +42,8 @@ export class Screen {
         this._initBuffer();
     }
 
-    getRow(r) { return this.buffer[r]; }
-    setRow(r, row) { this.buffer[r] = row; }
+    getRowAt(r) { return this.buffer[r]; }
+    setRowAt(r, row) { this.buffer[r] = row; }
     get cursorHidden() { return this._cursorHidden; }
     set cursorHidden(v) { this._cursorHidden = v; }
 
@@ -123,7 +123,7 @@ export class Screen {
         this.curX = Math.min(this.cols - 1, next);
     }
 
-    lineFeed() {
+    lineFeedEdge() {
         if (this.curY < this.scrollTop) this.curY = this.scrollTop;
         this.markRowDirty(this.curY);
         if (this.curY >= this.scrollBottom) {
@@ -134,10 +134,10 @@ export class Screen {
         }
     }
 
-    reverseIndex() {
+    reverseScroll(n = 1) {
         this.markRowDirty(this.curY);
         if (this.curY === this.scrollTop) {
-            this._scrollDown(1);
+            this._scrollDown(n);
         } else {
             this.curY--;
         }
@@ -148,11 +148,11 @@ export class Screen {
         const cell = this._makeCell(ch);
         if (cell.width === 2 && this.curX >= this.cols - 1) {
             this.curX = 0;
-            this.lineFeed();
+            this.lineFeedEdge();
         }
         if (this.curX >= this.cols) {
             this.curX = 0;
-            this.lineFeed();
+            this.lineFeedEdge();
         }
 
         const row = this.buffer[this.curY];
@@ -213,12 +213,12 @@ export class Screen {
         this.markAllDirty();
     }
 
-    altBuffer() {
-        this._normalLines = this.buffer;
-        this._normalCurX = this.curX;
-        this._normalCurY = this.curY;
-        this._normalViewOffset = this.viewOffset;
-        this._normalScroll = { top: this.scrollTop, bottom: this.scrollBottom };
+    useAltBuffer() {
+        this._primaryBuffer = this.buffer;
+        this._primaryCurX = this.curX;
+        this._primaryCurY = this.curY;
+        this._primaryViewOffset = this.viewOffset;
+        this._primaryScroll = { top: this.scrollTop, bottom: this.scrollBottom };
 
         this.buffer = [];
         for (let i = 0; i < this.rows; i++) this.buffer.push(this._emptyRow());
@@ -230,17 +230,17 @@ export class Screen {
         this.markAllDirty();
     }
 
-    normalBuffer() {
-        if (!this._normalLines) return;
-        this.buffer = this._normalLines;
-        this.curX = this._normalCurX || 0;
-        this.curY = this._normalCurY || 0;
-        this.viewOffset = this._normalViewOffset || 0;
-        if (this._normalScroll) {
-            this.scrollTop = this._normalScroll.top;
-            this.scrollBottom = this._normalScroll.bottom;
+    restorePrimaryBuffer() {
+        if (!this._primaryBuffer) return;
+        this.buffer = this._primaryBuffer;
+        this.curX = this._primaryCurX || 0;
+        this.curY = this._primaryCurY || 0;
+        this.viewOffset = this._primaryViewOffset || 0;
+        if (this._primaryScroll) {
+            this.scrollTop = this._primaryScroll.top;
+            this.scrollBottom = this._primaryScroll.bottom;
         }
-        this._normalLines = null;
+        this._primaryBuffer = null;
         this.markAllDirty();
     }
 

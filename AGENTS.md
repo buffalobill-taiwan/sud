@@ -13,8 +13,8 @@ Live demo: <https://buffalobill-taiwan.github.io/htmlterm/>
 | Overlay compositing (widgets + dialogs) | Complete |
 | Frame-stack shell + Typewriter | Complete |
 | Demo commands | 18 registered (see Command Architecture) |
-| Automated tests | None |
-| CI | None |
+| Automated tests | Excluded — manual testing only |
+| CI | Excluded — not planned |
 
 Recent focus (Jun 2026): architecture refactors — frame stack model, dialog module split,
 shared constants/helpers, `StateStack` merged into `DialogFrame`, CJK overlay clipping.
@@ -341,7 +341,7 @@ unaddressed:
 
 | Gap | Notes |
 |---|---|
-| Automated tests | No unit/integration tests; manual browser testing only |
+| Automated tests | Excluded — manual browser testing only |
 | Virtual `cd`/`pwd` | May add CWD string state for prompt/UX — no filesystem needed |
 | Command history search | LineEditor has up/down history only, no incremental search |
 | Tab completion | Command names only; no argument completion |

@@ -32,15 +32,15 @@ export class Parser {
         for (let i = 0; i < data.length; i++) {
             const ch = data[i];
             if (this._state === 'escape') {
-                this._processEscape(ch);
+                this._handleEscape(ch);
                 continue;
             }
             if (this._state === 'csi') {
-                this._buf += ch;
+                this._retained += ch;
                 const code = ch.charCodeAt ? ch.charCodeAt(0) : ch;
                 if (isFinalByte(code)) {
-                    this._processCSI(this._buf);
-                    this._buf = '';
+                    this._handleCSI(this._retained);
+                    this._retained = '';
                     this._state = 'ground';
                 }
                 continue;
@@ -58,16 +58,16 @@ export class Parser {
         const code = ch.charCodeAt ? ch.charCodeAt(0) : ch;
         if (code === ESC) {
             this._state = 'escape';
-            this._buf = '';
-            this._privateMarker = '';
+            this._retained = '';
+            this._decPrivate = '';
             return;
         }
         if (code === CR) { screen.carriageReturn(); return; }
-        if (code === LF) { screen.carriageReturn(); screen.lineFeed(); return; }
+        if (code === LF) { screen.carriageReturn(); screen.lineFeedEdge(); return; }
         if (code === BS) { screen.backspace(); return; }
         if (code === TAB) { screen.tab(); return; }
         if (code === BEL) { return; }
-        if (code === 0x0B || code === 0x0C) { screen.lineFeed(); return; }
+        if (code === 0x0B || code === 0x0C) { screen.lineFeedEdge(); return; }
         if (code < 0x20) return;
         screen.writeChar(ch);
     }
@@ -84,54 +84,54 @@ export class Parser {
         }
     }
 
-    _processEscape(ch) {
+    _handleEscape(ch) {
         const screen = this.screen;
         const code = ch.charCodeAt ? ch.charCodeAt(0) : ch;
-        if (code === CSI_INTRODUCER) { this._state = 'csi'; this._buf = ''; return; }
+        if (code === CSI_INTRODUCER) { this._state = 'csi'; this._retained = ''; return; }
         if (code === ESC_OSC) { this._state = 'osc'; this._oscString = ''; return; }
         if (code === ESC_DCS) { this._state = 'dcs'; return; }
         if (code === ESC_SOS) { this._state = 'sos'; return; }
         if (code === ESC_PM) { this._state = 'pm'; return; }
         if (code === ESC_APC) { this._state = 'apc'; return; }
         if (code === ESC_SS2 || code === ESC_SS3) { this._state = 'ground'; return; }
-        if (code === ESC_IND) { screen.lineFeed(); this._state = 'ground'; return; }
-        if (code === ESC_NEL) { screen.lineFeed(); screen.carriageReturn(); this._state = 'ground'; return; }
+        if (code === ESC_IND) { screen.lineFeedEdge(); this._state = 'ground'; return; }
+        if (code === ESC_NEL) { screen.lineFeedEdge(); screen.carriageReturn(); this._state = 'ground'; return; }
         if (code === ESC_SAVE) { screen.savedX = screen.curX; screen.savedY = screen.curY; this._state = 'ground'; return; }
         if (code === ESC_RESTORE) { if (screen.savedX >= 0) { screen.curX = screen.savedX; screen.curY = screen.savedY; screen.markRowDirty(screen.curY); } this._state = 'ground'; return; }
         if (code === ESC_TABSET) { this._state = 'ground'; return; }
-        if (code === ESC_RI) { screen.reverseIndex(); this._state = 'ground'; return; }
+        if (code === ESC_RI) { screen.reverseScroll(); this._state = 'ground'; return; }
         if (code === ESC_ST) { this._state = 'ground'; return; }
         if (code >= 0x40 && code <= 0x5F) { this._state = 'ground'; return; }
         this._state = 'ground';
     }
 
-    _processCSI(buf) {
-        let privateMarker = '';
+    _handleCSI(buf) {
+        let decPrivate = '';
         let n = '';
         for (let i = 0; i < buf.length; i++) {
             const ch = buf[i];
             const code = ch.charCodeAt ? ch.charCodeAt(0) : ch;
             if (isFinalByte(code)) {
                 if (n && "?!><'".includes(n[0])) {
-                    privateMarker = n[0];
+                    decPrivate = n[0];
                     n = n.substring(1);
                 }
                 const parts = n ? n.split(';').map(Number) : [];
-                this._dispatchCSI(privateMarker, parts, ch);
+                this._executeCSI(decPrivate, parts, ch);
                 return;
             }
             n += ch;
         }
     }
 
-    _dispatchCSI(privateMarker, params, finalByte) {
+    _executeCSI(decPrivate, params, finalByte) {
         const screen = this.screen;
 
-        if (privateMarker === '?') {
+        if (decPrivate === '?') {
             this._privateCSI(params, finalByte);
             return;
         }
-        if (privateMarker === '>') return;
+        if (decPrivate === '>') return;
 
         const p0 = params[0] || 0;
         const p1 = params[1] || 0;
@@ -187,7 +187,7 @@ export class Parser {
                 if (p0 === 1002) { screen.mouseMode = 1002; return; }
                 if (p0 === 1003) { screen.mouseMode = 1003; return; }
                 if (p0 === 1006) { screen.mouseMode = 1006; return; }
-                if (p0 === 1049) { screen.altBuffer(); return; }
+                if (p0 === 1049) { screen.useAltBuffer(); return; }
                 if (p0 === 1) { screen.modes.applicationCursorKeys = true; return; }
                 if (p0 === 2000) { screen.modes.bracketedPaste = true; return; }
                 break;
@@ -195,7 +195,7 @@ export class Parser {
                 if (p0 === 25) { screen.cursorHidden = true; return; }
                 if (p0 === 1000 || p0 === 1002 || p0 === 1003) { screen.mouseMode = 0; return; }
                 if (p0 === 1006) { screen.mouseMode = 0; return; }
-                if (p0 === 1049) { screen.normalBuffer(); return; }
+                if (p0 === 1049) { screen.restorePrimaryBuffer(); return; }
                 if (p0 === 1) { screen.modes.applicationCursorKeys = false; return; }
                 if (p0 === 2000) { screen.modes.bracketedPaste = false; return; }
                 break;

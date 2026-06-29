@@ -157,7 +157,7 @@ export class LineEditor {
             if (code === 0x1B) {                          // Escape sequence
                 const csi = parseCSI(data.slice(i));
                 if (csi) {
-                    this._handleCSIFinal(csi.final, csi.params);
+                    this._handleEditorCSI(csi.final, csi.params);
                     i += csi.consumed;
                 } else {
                     i += 2; // lone ESC or unknown
@@ -181,7 +181,7 @@ export class LineEditor {
         return consumed;
     }
 
-    _handleCSIFinal(final, params) {
+    _handleEditorCSI(final, params) {
         const m = this._model;
         switch (final) {
             case 'A': this._historyUp();   break;

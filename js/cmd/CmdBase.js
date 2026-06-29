@@ -9,11 +9,11 @@ export class CmdBase {
         this.system = SystemManager.instance;
         this.term = this.system.term;
         this.closed = true;
-        this._waitingForDrain = false;
-        // Monotonically-increasing counter that printThen() snapshots at call time;
-        // a later printThen() call increments it, silently cancelling any pending callback
-        // from the previous call.
-        this._cbSession = 0;
+        this._awaitingTypewriterDrain = false;
+        // Monotonically-increasing version number used by printThen() to detect stale
+        // callbacks: a later printThen() bump silently cancels any callback from an
+        // earlier call that hasn't fired yet.
+        this._printCallbackEpoch = 0;
         this._selectResolve = null;
     }
 
@@ -108,12 +108,12 @@ export class CmdBase {
     }
 
     printThen(text, callback) {
-        this._cbSession++;
-        const session = this._cbSession;
+        this._printCallbackEpoch++;
+        const epoch = this._printCallbackEpoch;
         this.print(text);
         const cb = () => {
             this.system.typewriter.removeOnDrain(cb);
-            if (this.closed || session !== this._cbSession) return;
+            if (this.closed || epoch !== this._printCallbackEpoch) return;
             callback();
         };
         this.system.typewriter.onDrain(cb);
@@ -134,7 +134,7 @@ export class CmdBase {
             this.onCancel();
             return;
         }
-        if (this._waitingForDrain) {
+        if (this._awaitingTypewriterDrain) {
             if (this.system.typewriter.isActive()) {
                 this.system.typewriter.abort();
             }
@@ -165,9 +165,9 @@ export class CmdBase {
             selCol: 0,
         };
 
-        this._waitingForDrain = true;
+        this._awaitingTypewriterDrain = true;
         this.printThen(opts.text || '', () => {
-            this._waitingForDrain = false;
+            this._awaitingTypewriterDrain = false;
             this.term.write(CURSOR_HIDE);
             const ss = this._selectState;
             ss.render(ss.selRow, ss.selCol, ss.options, ss.term);
@@ -199,9 +199,9 @@ export class CmdBase {
     }
 
     prompt(text, onInput) {
-        this._waitingForDrain = true;
+        this._awaitingTypewriterDrain = true;
         this.printThen(text, () => {
-            this._waitingForDrain = false;
+            this._awaitingTypewriterDrain = false;
             this.system.readLine(onInput);
         });
     }
