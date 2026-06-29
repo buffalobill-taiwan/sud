@@ -1,4 +1,5 @@
 export { CmdBase } from './CmdBase.js';
+export { AnimeCmd } from './anime.js';
 export { Help } from './help.js';
 export { Clear } from './clear.js';
 export { Echo } from './echo.js';
