@@ -96,9 +96,9 @@ export class MenuDialog extends Dialog {
             } else if (final === 'B') {                        // ↓
                 this._moveBy(1);
             } else if (final === '~' && params === '5') {      // PageUp
-                this._moveBy(-this.visibleCount);
+                this._moveTo(Math.max(0, this.selected - this.visibleCount));
             } else if (final === '~' && params === '6') {      // PageDown
-                this._moveBy(this.visibleCount);
+                this._moveTo(Math.min(this.items.length - 1, this.selected + this.visibleCount));
             } else if (final === 'H' || (final === '~' && (params === '1' || params === '7'))) { // Home
                 this._moveTo(0);
             } else if (final === 'F' || (final === '~' && (params === '4' || params === '8'))) { // End
