@@ -1,8 +1,7 @@
-import { isWide } from '../unicode-width.js';
-import { _writeStr } from './write.js';
+import { _writeStr, bufWidth } from './write.js';
 import { addDragMethods, markDirtyRows } from '../drag.js';
-import { OverlayZ, isFinalByte, createEmptyBuffer, makeOverlayGetCell } from '../sgr.js';
-import { DEFAULT_DIALOG_WIDTH, CSI_INTRODUCER } from '../constants.js';
+import { OverlayZ, createEmptyBuffer, makeOverlayGetCell } from '../sgr.js';
+import { DEFAULT_DIALOG_WIDTH } from '../constants.js';
 
 export class Dialog {
     constructor(term, opts) {
@@ -68,22 +67,7 @@ export class Dialog {
         markDirtyRows(this.term, this.y, this.h);
     }
 
-    _bufWidth(str) {
-        if (!str) return 0;
-        let w = 0;
-        let inEsc = false;
-        for (const ch of str) {
-            const code = ch.charCodeAt(0);
-            if (code === 0x1B) { inEsc = true; continue; }
-            if (inEsc) {
-                if (code === CSI_INTRODUCER) continue;
-                if (isFinalByte(code)) inEsc = false;
-                continue;
-            }
-            w += isWide(ch) ? 2 : 1;
-        }
-        return w;
-    }
+    _bufWidth(str) { return bufWidth(str); }
 
     _t(row, s) {
         _writeStr(this._buffer, row, 0, s, this.width);

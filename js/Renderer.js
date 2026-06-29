@@ -14,6 +14,7 @@ export class Renderer {
         this.rowEls = [];
         this.cellEls = [];
         this.cursorEl = null;
+        this._lastCursor = null;
 
         this._initDOM();
         this._initScrollIndicator();
@@ -214,24 +215,41 @@ export class Renderer {
 
     _renderCursor() {
         const screen = this.screen;
-        if (screen.cursorHidden) { this.cursorEl.className = 'hidden'; return; }
-        if (screen.viewOffset !== 0 || screen.curX < 0 || screen.curX >= screen.cols) {
+        const hidden = screen.cursorHidden || screen.viewOffset !== 0
+            || screen.curX < 0 || screen.curX >= screen.cols;
+
+        const cell = hidden ? null : screen.getCellAt(screen.curX, screen.curY);
+        const { fg: rawFg, bg: rawBg } = cell
+            ? this._swapInverse(cell.fg, cell.bg, cell)
+            : { fg: 0, bg: 0 };
+
+        const next = hidden ? null : {
+            x: screen.curX, y: screen.curY,
+            ch: cell.ch, fg: rawFg, bg: rawBg,
+            w: this.charWidth, h: this.charHeight,
+        };
+
+        const prev = this._lastCursor;
+
+        if (!next && !prev) return; // still hidden
+        if (next && prev &&
+            next.x === prev.x && next.y === prev.y &&
+            next.ch === prev.ch && next.fg === prev.fg && next.bg === prev.bg &&
+            next.w === prev.w && next.h === prev.h) return; // unchanged
+
+        this._lastCursor = next;
+
+        if (!next) {
             this.cursorEl.className = 'hidden';
             return;
         }
 
-        const cell = screen.getCellAt(screen.curX, screen.curY);
-        if (!cell) { this.cursorEl.className = 'hidden'; return; }
-        const { fg, bg } = this._swapInverse(cell.fg, cell.bg, cell);
-
-        this.cursorEl.className = 'b' + fg + ' q' + bg;
-        this.cursorEl.textContent = cell.ch;
-        this.cursorEl.style.left = (screen.curX * this.charWidth) + 'px';
-        this.cursorEl.style.top = (screen.curY * this.charHeight) + 'px';
-        this.cursorEl.style.width = this.charWidth + 'px';
-        this.cursorEl.style.height = this.charHeight + 'px';
-        this.cursorEl.style.fontSize = this.charHeight + 'px';
-        this.cursorEl.style.lineHeight = this.charHeight + 'px';
+        this.cursorEl.className = 'b' + next.fg + ' q' + next.bg;
+        this.cursorEl.textContent = next.ch;
+        this.cursorEl.style.cssText =
+            `left:${next.x * next.w}px;top:${next.y * next.h}px;` +
+            `width:${next.w}px;height:${next.h}px;` +
+            `font-size:${next.h}px;line-height:${next.h}px;`;
     }
 
     _setScale(scale) {
@@ -260,6 +278,7 @@ export class Renderer {
         }
 
         screen.markAllDirty();
+        this._lastCursor = null;
     }
 
     fitToViewport() {

@@ -1,5 +1,26 @@
-import { defaultAttr, applySGR, makeCell } from '../sgr.js';
+import { defaultAttr, applySGR, makeCell, isFinalByte } from '../sgr.js';
 import { isWide } from '../unicode-width.js';
+import { CSI_INTRODUCER } from '../constants.js';
+
+/**
+ * Measure the display width of a string containing inline SGR sequences.
+ * SGR bytes are skipped; wide chars count as 2, others as 1.
+ */
+export function bufWidth(str) {
+    if (!str) return 0;
+    let w = 0, inEsc = false;
+    for (const ch of str) {
+        const code = ch.charCodeAt(0);
+        if (code === 0x1B) { inEsc = true; continue; }
+        if (inEsc) {
+            if (code === CSI_INTRODUCER) continue;
+            if (isFinalByte(code)) inEsc = false;
+            continue;
+        }
+        w += isWide(ch) ? 2 : 1;
+    }
+    return w;
+}
 
 export function _writeStr(buf, y, x, str, maxX) {
     let attr = defaultAttr();
