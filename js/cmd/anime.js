@@ -45,6 +45,7 @@ export class AnimeCmd extends CmdBase {
 
         this._afterDrain(() => {
             if (gen !== this.abortGeneration) { this.releaseBusy(); return; }
+            this.term.write('\x1B[?25l');  // typewriter drain shows cursor; hide it again
 
             const interval = setInterval(() => {
                 if (gen !== this.abortGeneration) {
