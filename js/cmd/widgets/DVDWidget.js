@@ -55,11 +55,16 @@ export class DVDWidget extends WidgetBase {
 
     endDrag() {
         this._startInterval(() => this._tick(), 120);
+        super.endDrag();
     }
 
     _tick() {
+        if (this._dragOffX !== undefined) {
+            this.draw();
+            return;
+        }
+
         const oldY = this._y;
-        const oldX = this._x;
 
         let nx = this._x + this._dx;
         let ny = this._y + this._dy;
