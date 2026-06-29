@@ -16,6 +16,13 @@ export class CmdBase {
         this._cbSession = 0;
         this._selectResolve = null;
     }
+
+    static get commandName() { return ''; }
+    static get help() { return ''; }
+    static get menu() { return null; }
+    static get usage() { return null; }
+    static get persistent() { return false; }
+
     execute(args) {}
     print(text) { this.system.print(text); }
     readLine(callback) { this.system.readLine(callback); }
@@ -38,11 +45,6 @@ export class CmdBase {
         wm.add(new WidgetClass());
         return true;
     }
-
-    static get commandName() { return ''; }
-    static get help() { return ''; }
-    static get menu() { return null; }
-    static get usage() { return null; }
 
     error(text) {
         this.print(red('Error: ' + text) + '\n');
