@@ -8,5 +8,5 @@ export class DvdCmd extends CmdBase {
     }
     static get commandName() { return 'dvd'; }
     static get help() { return 'Toggle DVD bouncing logo'; }
-    static get menu() { return 'DVD bouncing logo (screen saver)'; }
+    static get menu() { return 'DVD bouncing logo'; }
 }
