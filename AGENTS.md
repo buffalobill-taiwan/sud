@@ -20,6 +20,8 @@ Recent focus (Jun 2026): architecture refactors — frame stack model, dialog mo
 shared constants/helpers, `StateStack` merged into `DialogFrame`, CJK overlay clipping.
 Frame stack moved from `DemoShell` to `SystemManager` (Jun 2026).
 `SystemManager` became singleton, `DemoShell` absorbed as `ShellCmd` CmdBase subclass (Jun 2026).
+Cmd ergonomics refactor (Jun 2026): `isTyping` → `_waitingForDrain`, `open()` method added,
+`select-grid.js` moved to `js/cmd/`, `quiz.js` `_genQuestion()` extracted.
 
 ## Architecture
 
@@ -246,7 +248,7 @@ is actually ready for input.
 | Animated output | `this.print(text)` | Enqueues via Typewriter; frame blocks on it |
 | Instant output | `this.term.write(text)` | Bypasses Typewriter — use with care |
 | Interactive input | `this.readLine(callback)` | Callback receives trimmed string; frame blocks via `_readLinePending` |
-| **Interactive select** | `this.select()` | Sets `cmd.closed=false`; SyncCmdFrame routes keys via `cmd.handleKey` |
+| **Interactive select** | `this.select()` | Calls `open()` internally; SyncCmdFrame routes keys via `cmd.handleKey` |
 | Busy-wait / async | `this.holdBusy()` / `this.releaseBusy()` | Frame blocks via `_busy` until released |
 | Cancel-safe async | `this.abortGeneration` | Compare on re-entry to detect Ctrl+C abort |
 | Create overlay | `WidgetBase.start()` | Own buffer, composited by renderer |
@@ -255,9 +257,9 @@ is actually ready for input.
 **Critical rules for cmd authors:**
 1. Output → `this.print()`, not `this.term.write()`. The Typewriter animation is
    what gates the frame lifecycle. Bypassing it risks prompt timing bugs.
-2. Interactive input → `this.select()` or `this.selectAsync()`. These set
-   `cmd.closed=false`, causing `SyncCmdFrame.handleInput` to route keyboard
-   events to `cmd.handleKey()` — no `this.open()` needed.
+2. Interactive input → `this.select()` or `this.selectAsync()`. These call
+   `this.open()` internally, causing `SyncCmdFrame.handleInput` to route keyboard
+   events to `cmd.handleKey()`. Do NOT set `this.closed = false` directly.
 3. `this.close()` sets `cmd.closed=true`, which unblocks the SyncCmdFrame and
    eventually pops it — no DialogFrame involved.
 4. Dialogs and widgets are the exception to rule 1: they own cell buffers and
@@ -384,6 +386,8 @@ js/cmd/
 | `execute(args)` | Command logic, called with parsed arg array |
 | `print(text)` | Enqueues text to Typewriter via `this.system.print()` |
 | `readLine(callback)` | Request next line of input; callback receives trimmed string |
+| `open()` | Open cmd for interactive input — sets `closed=false`; paired with `close()` |
+| `close()` | End interactive mode — sets `closed=true`, shows cursor, ticks frame stack |
 | `holdBusy()` | Hold busy flag (for async/busy-wait commands like flash, sleep) |
 | `releaseBusy()` | Release busy flag |
 | `get abortGeneration()` | Monotonically increasing counter for Ctrl+C detection |
@@ -395,7 +399,7 @@ js/cmd/
 
 ### CmdBase.select() — 2D grid selection
 
-Grid navigation helpers extracted to `js/select-grid.js` (`defaultGridMove`,
+Grid navigation helpers extracted to `js/cmd/select-grid.js` (`defaultGridMove`,
 `displayWidth`). `CmdBase` imports and uses them as defaults.
 
 ```js
@@ -604,7 +608,6 @@ draw() {
 - `js/LineEditor.js`: Line editing, history, tab completion
 - `js/typewriter.js`: rAF-based animated command output
 - `js/CmdFrame.js`: Frame stack types (CmdFrame, SyncCmdFrame, DialogFrame, ShellFrame — cursor save/restore in `DialogFrame._saveCursor`/`finish`)
-- `js/select-grid.js`: Grid navigation helpers (`defaultGridMove`, `displayWidth`)
 
 ### Dialogs (`js/dialog/`)
 
@@ -619,6 +622,7 @@ draw() {
 - `index.js`: Barrel export for auto-registration
 - `CmdBase.js`: Command base class (no constructor params — `this.system` from singleton)
 - `ShellCmd.js`: Persistent shell REPL (CmdBase subclass)
+- `select-grid.js`: Grid navigation helpers (`defaultGridMove`, `displayWidth`) used by `CmdBase.select()`
 - `WidgetBase.js`: Overlay lifecycle, `_buffer`, `putc()`
 - `widgets/ClockWidget.js`: TSR clock (8 cells, 1s interval)
 - `widgets/DVDWidget.js`: Bouncing DVD logo (7×3, 120ms interval)

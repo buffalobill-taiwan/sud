@@ -4,14 +4,18 @@ import { cyan, bold, green, red, white } from '../sgr.js';
 import { InputDialog, ShowDialog } from '../dialog/index.js';
 
 export class Quiz extends CmdBase {
-    execute(args) {
+    static _genQuestion() {
         let a = Math.floor(Math.random() * 9) + 1;
         let b = Math.floor(Math.random() * 9) + 1;
         const ops = ['+', '-', '×'];
         const op = ops[Math.floor(Math.random() * 3)];
         if (op === '-' && a < b) [a, b] = [b, a];
         const answer = op === '+' ? a + b : op === '-' ? a - b : a * b;
+        return { a, b, op, answer };
+    }
 
+    execute(args) {
+        const { a, b, op, answer } = Quiz._genQuestion();
         this.print(cyan(a + ' ' + op + ' ' + b + ' = ?') + '\n');
 
         this.readLine((line) => {
@@ -30,12 +34,7 @@ export class Quiz extends CmdBase {
 
     static openMenuDialog() {
         const system = SystemManager.instance;
-        let a = Math.floor(Math.random() * 9) + 1;
-        let b = Math.floor(Math.random() * 9) + 1;
-        const ops = ['+', '-', '×'];
-        const op = ops[Math.floor(Math.random() * 3)];
-        if (op === '-' && a < b) b = [a, a = b][0];
-        const answer = op === '+' ? a + b : op === '-' ? a - b : a * b;
+        const { a, b, op, answer } = Quiz._genQuestion();
 
         system._createDialog(InputDialog, 'quiz', {
             title: 'Quiz',

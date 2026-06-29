@@ -6,7 +6,7 @@ export class ShellCmd extends CmdBase {
     static get menu() { return null; }
 
     start() {
-        this.closed = false;
+        this.open();
     }
 
     handleKey(data) {

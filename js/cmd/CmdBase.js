@@ -2,20 +2,26 @@ import { SystemManager } from '../system.js';
 import { red, bold, yellow, CURSOR_SHOW, CURSOR_HIDE } from '../sgr.js';
 import { ShowDialog } from '../dialog/ShowDialog.js';
 import { InputDialog } from '../dialog/InputDialog.js';
-import { defaultGridMove, defaultGridRender } from '../select-grid.js';
+import { defaultGridMove, defaultGridRender } from './select-grid.js';
 
 export class CmdBase {
     constructor() {
         this.system = SystemManager.instance;
         this.term = this.system.term;
         this.closed = true;
-        this.isTyping = false;
+        this._waitingForDrain = false;
+        // Monotonically-increasing counter that printThen() snapshots at call time;
+        // a later printThen() call increments it, silently cancelling any pending callback
+        // from the previous call.
         this._cbSession = 0;
         this._selectResolve = null;
     }
     execute(args) {}
     print(text) { this.system.print(text); }
     readLine(callback) { this.system.readLine(callback); }
+    // Private implementation — use printThen() for interactive flows (select/prompt).
+    // Use _afterDrain() directly only when cmd.closed stays true (e.g. pure-output async cmds
+    // like anime that hold busy and don't open interactive mode).
     _afterDrain(callback) {
         const cb = () => { this.system.typewriter.removeOnDrain(cb); callback(); };
         this.system.typewriter.onDrain(cb);
@@ -85,6 +91,12 @@ export class CmdBase {
         this.system._tick();
     }
 
+    // Opens the command for interactive input (paired with close()).
+    // Sets cmd.closed=false so SyncCmdFrame routes key events to handleKey().
+    open() {
+        this.closed = false;
+    }
+
     onCancel() {
         if (this._selectResolve) {
             this._selectResolve(null);
@@ -120,7 +132,7 @@ export class CmdBase {
             this.onCancel();
             return;
         }
-        if (this.isTyping) {
+        if (this._waitingForDrain) {
             if (this.system.typewriter.isActive()) {
                 this.system.typewriter.abort();
             }
@@ -139,7 +151,7 @@ export class CmdBase {
         const renderedRef = { value: false };
         const render = opts.render || defaultGridRender(renderedRef);
 
-        this.closed = false;
+        this.open();
         this._selectState = {
             options: opts.options,
             move: opts.move || defaultGridMove,
@@ -151,9 +163,9 @@ export class CmdBase {
             selCol: 0,
         };
 
-        this.isTyping = true;
+        this._waitingForDrain = true;
         this.printThen(opts.text || '', () => {
-            this.isTyping = false;
+            this._waitingForDrain = false;
             this.term.write(CURSOR_HIDE);
             const ss = this._selectState;
             ss.render(ss.selRow, ss.selCol, ss.options, ss.term);
@@ -185,9 +197,9 @@ export class CmdBase {
     }
 
     prompt(text, onInput) {
-        this.isTyping = true;
+        this._waitingForDrain = true;
         this.printThen(text, () => {
-            this.isTyping = false;
+            this._waitingForDrain = false;
             this.system.readLine(onInput);
         });
     }
@@ -244,7 +256,7 @@ export class CmdBase {
     }
 
     async confirm(question) {
-        this.closed = false;
+        this.open();
         try {
             const result = await this.selectAsync({
                 text: question + '\n',
