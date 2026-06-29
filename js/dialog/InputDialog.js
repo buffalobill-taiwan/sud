@@ -2,6 +2,7 @@ import { Dialog } from './Dialog.js';
 import { makeCursorCell } from '../sgr.js';
 import { centeredDialogPos } from './position.js';
 import { DEFAULT_DIALOG_WIDTH } from '../constants.js';
+import { TextInputModel } from '../TextInputModel.js';
 
 export class InputDialog extends Dialog {
     constructor(term, opts) {
@@ -15,10 +16,13 @@ export class InputDialog extends Dialog {
         this.y = opts.y != null ? opts.y : Math.max(0, pos.y - 1);
         this.h = h;
         this.prompt = opts.prompt || '';
-        this.inputText = '';
+        this._model = new TextInputModel();
         this._onConfirm = opts.onConfirm || (() => {});
-        this._onCancel = opts.onCancel || (() => {});
+        this._onCancel  = opts.onCancel  || (() => {});
     }
+
+    // Keep inputText as a readable alias for external callers if any
+    get inputText() { return this._model.value; }
 
     open() {
         super.open();
@@ -26,46 +30,103 @@ export class InputDialog extends Dialog {
     }
 
     _showCursor() {
-        const bufW = this._bufWidth(this.inputText);
-        const cx = 1 + this._inputPrefix.length + bufW;
-        const cy = this._inputRow;
-        if (cx < this.width - 1) {
-            this._buffer[cy][cx] = makeCursorCell();
+        const PREFIX = ' > ';
+        const col = 1 + PREFIX.length + this._model.widthRange(0, this._model.cursor);
+        const row = this._inputRow;
+        if (col < this.width - 1) {
+            this._buffer[row][col] = makeCursorCell();
         }
-        this.term.markRowDirty(this.y + cy);
+        this.term.markRowDirty(this.y + row);
     }
 
     _renderContent() {
-        this._inputPrefix = ' > ';
         this._inputRow = 4;
+        const PREFIX = ' > ';
         this._leftRow(3, '  ' + this.prompt);
-        this._leftRow(this._inputRow, this._inputPrefix + this.inputText);
+        this._leftRow(this._inputRow, PREFIX + this._model.value);
         this._showCursor();
     }
 
     _onKey(data) {
-        if (data.length > 1) return;
+        const result = this._handleInput(data);
+        if (result === 'close') return 'close';
+        if (result !== 'none') this.refreshContent();
+    }
 
-        const code = data.charCodeAt(0);
-        if (code === 0x0D || code === 0x0A) {
-            this._onConfirm(this.inputText);
-            return 'close';
-        }
-        if (code === 0x1B || code === 0x03) {
-            this._onCancel();
-            return 'close';
-        }
-        if (code === 0x7F || code === 0x08) {
-            if (this.inputText.length > 0) {
-                this.inputText = this.inputText.slice(0, -1);
-                this.refreshContent();
+    _handleInput(data) {
+        let changed = 'none';
+
+        for (let i = 0; i < data.length; i++) {
+            const ch   = data[i];
+            const code = ch.charCodeAt(0);
+
+            if (code === 0x0D || code === 0x0A) {           // Enter
+                this._onConfirm(this._model.value);
+                return 'close';
             }
-            return;
+            if (code === 0x03) {                            // Ctrl+C
+                this._onCancel();
+                return 'close';
+            }
+            if (code === 0x1B) {
+                // Single ESC = cancel; ESC [ / ESC O = cursor/edit sequence
+                if (data.length === 1 || (data[i + 1] !== '[' && data[i + 1] !== 'O')) {
+                    this._onCancel();
+                    return 'close';
+                }
+                const adv = this._handleEscape(data.slice(i));
+                i += adv - 1;
+                changed = 'content';  // cursor may have moved; re-render
+                continue;
+            }
+
+            let r = 'none';
+            if (code === 0x7F || code === 0x08) r = this._model.backspace();
+            else if (code === 0x01) r = this._model.moveHome();
+            else if (code === 0x05) r = this._model.moveEnd();
+            else if (code === 0x15) r = this._model.deleteToStart();
+            else if (code === 0x0B) r = this._model.deleteToEnd();
+            else if (code === 0x17) r = this._model.deleteWordBefore();
+            else if (code >= 0x20) {
+                const cp = data.codePointAt(i);
+                r = this._model.insert(String.fromCodePoint(cp));
+                i += cp > 0xFFFF ? 1 : 0;
+            }
+
+            if (r !== 'none') changed = r;
         }
-        if (code >= 0x20) {
-            this.inputText += data;
-            this.refreshContent();
-            return;
+
+        return changed;
+    }
+
+    _handleEscape(data) {
+        if (data.length < 2) return 1;
+        if (data[1] === 'O' && data.length >= 3) {
+            this._handleCSIFinal(data[2], '');
+            return 3;
+        }
+        if (data[1] === '[') {
+            let j = 2;
+            while (j < data.length && data.charCodeAt(j) >= 0x20 && data.charCodeAt(j) <= 0x3F) j++;
+            if (j >= data.length) return data.length;
+            this._handleCSIFinal(data[j], data.slice(2, j));
+            return j + 1;
+        }
+        return 2;
+    }
+
+    _handleCSIFinal(final, params) {
+        const m = this._model;
+        switch (final) {
+            case 'C': m.moveRight();    break;   // →
+            case 'D': m.moveLeft();     break;   // ←
+            case 'H': m.moveHome();     break;   // Home
+            case 'F': m.moveEnd();      break;   // End
+            case '~':
+                if (params === '1' || params === '7') m.moveHome();
+                else if (params === '4' || params === '8') m.moveEnd();
+                else if (params === '3') m.deleteForward();
+                break;
         }
     }
 }
