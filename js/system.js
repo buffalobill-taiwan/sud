@@ -129,6 +129,7 @@ export class SystemManager {
                     if (this.typewriter.isActive() || this._busy || this._readLineState) return;
                     frame.onActivate();
                     frame._pendingActivate = false;
+                    this._flushQueuedInput();
                 }
                 return;
             }
