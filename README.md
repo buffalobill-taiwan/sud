@@ -90,6 +90,7 @@ Open `index.html` in a modern browser, or visit the live demo:
 | `mbti` | MBTI personality test (interactive) |
 | `quiz` | Math quiz challenge |
 | `sleep` | Wait for N seconds (default 1) |
+| `time` | Measure execution time of a command |
 
 ### Keyboard shortcuts
 
