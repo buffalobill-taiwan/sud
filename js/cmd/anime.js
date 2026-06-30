@@ -1,4 +1,5 @@
 import { CmdBase } from './CmdBase.js';
+import { OverlayZ, createEmptyBuffer, makeOverlayGetCell, CURSOR_HIDE, CURSOR_SHOW, makeCell, defaultAttr } from '../util/sgr.js';
 
 export class AnimeCmd extends CmdBase {
     static get commandName() { return 'anime'; }
@@ -8,55 +9,86 @@ export class AnimeCmd extends CmdBase {
     async execute(args) {
         const { default: data } = await import('./art/anime.js');
         const { cols, rows, frames } = data;
-        const termRows = rows / 2;  // ▀ half-block: 2 px rows → 1 terminal row
+        const termRows = rows / 2;
+        const overlayH = termRows + 1;
+        const ox = Math.floor((this.term.cols - cols) / 2);
+        const oy = Math.floor((this.term.rows - overlayH) / 2);
 
-        // Pre-render all frames with cursor-up prefix for in-place update
-        const rendered = frames.map(pixels => {
-            let out = `\x1B[${termRows + 1}A`;  // +1 for the hint line
+        const cellFrames = frames.map(pixels => {
+            const frameBuf = new Array(termRows);
             for (let ty = 0; ty < termRows; ty++) {
+                const row = new Array(cols);
                 for (let x = 0; x < cols; x++) {
                     const fg = pixels[ty * 2 * cols + x];
                     const bg = (ty * 2 + 1) < rows ? pixels[(ty * 2 + 1) * cols + x] : 0;
-                    out += `\x1B[38;5;${fg};48;5;${bg}m▀\x1B[0m`;
+                    row[x] = makeCell('▀', { ...defaultAttr(), fg, bg }, 1);
                 }
-                out += '\n';
+                frameBuf[ty] = row;
             }
-            out += '\x1B[2mPress Ctrl+C to stop\x1B[0m\n';
-            return out;
+            return frameBuf;
         });
 
-        // Print frame 0 without cursor-up (first output, like art command)
-        let firstFrame = '\x1B[?25l';  // hide cursor
-        const pixels0 = frames[0];
-        for (let ty = 0; ty < termRows; ty++) {
-            for (let x = 0; x < cols; x++) {
-                const fg = pixels0[ty * 2 * cols + x];
-                const bg = (ty * 2 + 1) < rows ? pixels0[(ty * 2 + 1) * cols + x] : 0;
-                firstFrame += `\x1B[38;5;${fg};48;5;${bg}m▀\x1B[0m`;
-            }
-            firstFrame += '\n';
+        const hintText = 'Press Ctrl+C to stop';
+        const hintPad = Math.floor((cols - hintText.length) / 2);
+        const def = defaultAttr();
+        const hintRow = new Array(cols);
+        for (let x = 0; x < cols; x++) hintRow[x] = null;
+        for (let x = 0; x < hintText.length; x++) {
+            const cell = makeCell(hintText[x], def, 1);
+            cell.dim = true;
+            hintRow[hintPad + x] = cell;
         }
-        firstFrame += '\x1B[2mPress Ctrl+C to stop\x1B[0m\n';
-        this.print(firstFrame);
+
+        const buffer = createEmptyBuffer(cols, overlayH);
+        const overlay = {
+            y: oy, x: ox, h: overlayH, w: cols,
+            z: OverlayZ.FLASH,
+            owner: null,
+            getCell: makeOverlayGetCell(() => buffer, cols, overlayH),
+        };
 
         this.holdBusy();
         const gen = this.abortEpoch;
+
+        const copyFrame = (frameIdx) => {
+            const frame = cellFrames[frameIdx];
+            for (let ty = 0; ty < termRows; ty++) {
+                const srcRow = frame[ty];
+                const dstRow = buffer[ty];
+                for (let x = 0; x < cols; x++) dstRow[x] = srcRow[x];
+            }
+            buffer[termRows] = hintRow;
+        };
+
+        let rafId = null;
+        const cleanup = () => {
+            if (rafId) { cancelAnimationFrame(rafId); rafId = null; }
+            this.term.removeOverlay(overlay);
+            this.term.markAllDirty();
+            this.term.write(CURSOR_SHOW);
+            this.releaseBusy();
+        };
+
+        this.term.write(CURSOR_HIDE);
+
+        copyFrame(0);
+        this.term.addOverlay(overlay);
+        this.term.markAllDirty();
+
         let frameIdx = 0;
+        let lastFrame = 0;
+        const TARGET_MS = 1000 / 30;
 
-        this._afterDrain(() => {
-            if (gen !== this.abortEpoch) { this.releaseBusy(); return; }
-            this.term.write('\x1B[?25l');  // typewriter drain shows cursor; hide it again
-
-            const interval = setInterval(() => {
-                if (gen !== this.abortEpoch) {
-                    clearInterval(interval);
-                    this.term.write('\x1B[?25h');  // restore cursor
-                    this.releaseBusy();
-                    return;
-                }
-                frameIdx = (frameIdx + 1) % rendered.length;
-                this.term.write(rendered[frameIdx]);
-            }, Math.round(1000 / 30));
-        });
+        const loop = (ts) => {
+            if (gen !== this.abortEpoch) { cleanup(); return; }
+            if (ts - lastFrame >= TARGET_MS) {
+                frameIdx = (frameIdx + 1) % cellFrames.length;
+                copyFrame(frameIdx);
+                this.term.markAllDirty();
+                lastFrame = ts;
+            }
+            rafId = requestAnimationFrame(loop);
+        };
+        rafId = requestAnimationFrame(loop);
     }
 }
