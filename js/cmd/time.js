@@ -1,4 +1,6 @@
 import { CmdBase } from './CmdBase.js';
+import { SystemManager } from '../system/system.js';
+import { InputDialog } from '../dialog/index.js';
 
 export class TimeCmd extends CmdBase {
     execute(args) {
@@ -22,6 +24,24 @@ export class TimeCmd extends CmdBase {
                     resolve();
                 }
             });
+        });
+    }
+
+    static openMenuDialog() {
+        const system = SystemManager.instance;
+        system._createDialog(InputDialog, 'time-input', {
+            title: 'Time a Command',
+            prompt: 'Enter command:',
+            footer: 'Enter Confirm  ESC Back',
+            onConfirm: (expr) => {
+                if (!expr.trim()) return;
+                if (system.menuDialog) {
+                    system.menuDialog.close();
+                    system.menuDialog = null;
+                }
+                system._execCmd('time ' + expr.trim());
+            },
+            onCancel: () => {},
         });
     }
 
