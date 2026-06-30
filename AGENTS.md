@@ -379,15 +379,16 @@ js/cmd/
 ├── flash.js           Flash       — screen/border/art flash; `--border`, `--art` flags; Ctrl+C abort (buffer overlay)
 ├── art.js             Art         — async pixel-art renderer (random artwork)
 ├── sleep.js           Sleep       — wait N seconds; Ctrl+C abort
+├── time.js            TimeCmd     — measure execution time of a command
 ├── art/               Static pixel data modules (adam, blacklotus, glaneuses, …)
 └── widgets/
     ├── ClockWidget.js
     └── DVDWidget.js
 ```
 
-**16 registered commands:** `art`, `ascii`, `astrology`, `calc`, `clear`, `clock`,
+**17 registered commands:** `art`, `ascii`, `astrology`, `calc`, `clear`, `clock`,
 `cowsay`, `date`, `dvd`, `echo`, `flash`, `help`, `menu`,
-`mbti`, `quiz`, `sleep`
+`mbti`, `quiz`, `sleep`, `time`
 
 **CmdBase contract:**
 
