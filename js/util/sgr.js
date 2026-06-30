@@ -69,6 +69,7 @@ export const CURSOR_SHOW = '\x1B[?25h';
 export const OverlayZ = {
     WIDGET: 10,
     DIALOG: 100,
+    FLASH: 200,
 };
 
 export function formatTime(date) {

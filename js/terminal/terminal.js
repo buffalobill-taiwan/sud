@@ -49,6 +49,7 @@ export class Terminal {
     get mouseMode() { return this.screen.mouseMode; }
     set mouseMode(v) { this.screen.mouseMode = v; }
     markRowDirty(r) { this.screen.markRowDirty(r); }
+    markAllDirty() { this.screen.markAllDirty(); }
     isWide(ch) { return this.screen.isWide(ch); }
 
     write(data) { this.parser.write(data); }

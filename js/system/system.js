@@ -3,7 +3,7 @@ import { LineEditor } from './LineEditor.js';
 import { tokenize } from '../util/tokenize.js';
 import { ShellCmd } from '../cmd/ShellCmd.js';
 import { ShellFrame, SyncCmdFrame, DialogFrame } from './CmdFrame.js';
-import { bold, green, yellow, gray, red, warn } from '../util/sgr.js';
+import { bold, green, yellow, gray, red, warn, makeCell, defaultAttr, OverlayZ } from '../util/sgr.js';
 import { MenuDialog } from '../dialog/MenuDialog.js';
 
 export class SystemManager {
@@ -19,6 +19,8 @@ export class SystemManager {
         this._busy = false;
         this._readLineState = null;
         this._abortGeneration = 0;
+        this._flashOv = null;
+        this._flashTimerId = null;
 
         this.typewriter = new Typewriter(this.term);
         this.typewriter.onDrain(() => this._tick());
@@ -197,6 +199,7 @@ export class SystemManager {
         this._readLineState = null;
         while (this._cmdStack.length > 1) this._cmdStack.pop();
         this.typewriter.abort();
+        this._flashCleanup();
         this.term.write('^C\n');
         if (this._cmdStack.length === 1 && this._cmdStack[0].persistent) {
             this._cmdStack[0]._pendingActivate = true;
@@ -346,7 +349,98 @@ export class SystemManager {
         }, this.menuItems);
         this.menuDialog = menuDlg;
     }
+
+    // === Flash overlay (buffer-based, no CSS DOM) ===
+
+    flash(count = 1) {
+        this._flashGen = this._abortGeneration;
+        this._flashRemaining = count;
+        this.holdBusy();
+        this._flashCycle();
+    }
+
+    flashBorder(count = 1) {
+        this._flashGen = this._abortGeneration;
+        this._flashRemaining = count;
+        this.holdBusy();
+        this._flashBorderCycle();
+    }
+
+    _flashCleanup() {
+        if (this._flashTimerId) { clearTimeout(this._flashTimerId); this._flashTimerId = null; }
+        if (this._flashOv) {
+            this.term.removeOverlay(this._flashOv);
+            this.term.markAllDirty();
+            this._flashOv = null;
+        }
+    }
+
+    _flashOverlay(getCell) {
+        return {
+            y: 0, x: 0, h: this.term.rows, w: this.term.cols,
+            z: OverlayZ.FLASH,
+            owner: null,
+            getCell,
+        };
+    }
+
+    _flashCycle() {
+        if (this._flashGen !== this._abortGeneration) { this._flashCleanup(); return; }
+        if (this._flashRemaining <= 0) { this.releaseBusy(); return; }
+
+        this._flashOv = this._flashOverlay(() => FLASH_WHITE);
+        this.term.addOverlay(this._flashOv);
+        this.term.markAllDirty();
+
+        this._flashTimerId = setTimeout(() => {
+            this._flashTimerId = null;
+            if (this._flashGen !== this._abortGeneration) { this._flashCleanup(); return; }
+            this._flashCleanup();
+            this._flashRemaining--;
+            if (this._flashRemaining > 0) {
+                this._flashTimerId = setTimeout(() => {
+                    this._flashTimerId = null;
+                    this._flashCycle();
+                }, 100);
+            } else {
+                this.releaseBusy();
+            }
+        }, 60);
+    }
+
+    _flashBorderCycle() {
+        if (this._flashGen !== this._abortGeneration) { this._flashCleanup(); return; }
+        if (this._flashRemaining <= 0) { this.releaseBusy(); return; }
+
+        const cols = this.term.cols;
+        const rows = this.term.rows;
+        this._flashOv = this._flashOverlay((y, x) =>
+            (y === 0 || y === rows - 1 || x === 0 || x === cols - 1) ? FLASH_WHITE : null);
+        this.term.addOverlay(this._flashOv);
+        this.term.markAllDirty();
+
+        this._flashTimerId = setTimeout(() => {
+            this._flashTimerId = null;
+            if (this._flashGen !== this._abortGeneration) { this._flashCleanup(); return; }
+            this._flashCleanup();
+            this._flashRemaining--;
+            if (this._flashRemaining > 0) {
+                this._flashTimerId = setTimeout(() => {
+                    this._flashTimerId = null;
+                    this._flashBorderCycle();
+                }, 100);
+            } else {
+                this.releaseBusy();
+            }
+        }, 60);
+    }
 }
+
+const FLASH_WHITE = makeCell(' ', (() => {
+    const a = defaultAttr();
+    a.fg = 15; a.bg = 15;
+    return a;
+})(), 1);
 
 export class WidgetManager {
     constructor() {
