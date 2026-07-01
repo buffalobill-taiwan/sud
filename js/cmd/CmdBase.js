@@ -274,4 +274,73 @@ export class CmdBase {
             this.close();
         }
     }
+
+    // === Additional dialog helpers ===
+
+    /**
+     * Menu selection helper: show items and return selected value.
+     * @param {string} prompt - Prompt text
+     * @param {Array<string>} items - Menu items
+     * @returns {Promise<string|null>} Selected item or null if cancelled
+     */
+    async choose(prompt, items) {
+        this.open();
+        try {
+            const result = await this.selectAsync({
+                text: prompt + '\n',
+                options: [items],
+            });
+            return result ? items[result.col] : null;
+        } finally {
+            this.close();
+        }
+    }
+
+    /**
+     * Multi-select helper: show checkboxes and return selected indices.
+     * @param {string} prompt - Prompt text
+     * @param {Array<string>} items - Items to select from
+     * @returns {Promise<Array<number>>} Array of selected indices
+     */
+    async multiSelect(prompt, items) {
+        this.open();
+        try {
+            const selected = [];
+            const marked = items.map(() => false);
+
+            while (true) {
+                const result = await this.selectAsync({
+                    text: prompt + '\n' + items.map((item, i) =>
+                        (marked[i] ? '[✓] ' : '[ ] ') + item
+                    ).join('\n') + '\n\nEnter to confirm, Esc to cancel\n',
+                    options: [items],
+                });
+
+                if (!result) break;
+                marked[result.col] = !marked[result.col];
+            }
+
+            return marked
+                .map((mark, i) => mark ? i : null)
+                .filter(i => i !== null);
+        } finally {
+            this.close();
+        }
+    }
+
+    /**
+     * Progress bar display helper.
+     * @param {number} current - Current progress
+     * @param {number} max - Maximum progress
+     * @param {string} label - Optional label
+     * @returns {string} Formatted progress bar
+     */
+    formatProgressBar(current, max, label = '') {
+        const width = 30;
+        const filled = Math.round((current / max) * width);
+        const empty = width - filled;
+        const bar = '█'.repeat(filled) + '░'.repeat(empty);
+        const pct = Math.round((current / max) * 100);
+        return `${label} [${bar}] ${pct}%`;
+    }
 }

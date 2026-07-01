@@ -1,6 +1,7 @@
 import { CmdBase } from './CmdBase.js';
 import { decodeRLE, applyDiff } from '../util/pixel-codec.js';
-import { OverlayZ, createEmptyBuffer, makeOverlayGetCell, CURSOR_HIDE, CURSOR_SHOW, makeCell, defaultAttr } from '../util/sgr.js';
+import { createEmptyBuffer, makeOverlayGetCell, makeCell, defaultAttr } from '../util/sgr.js';
+import { startBufferAnimation } from '../system/RAFAnimationHelper.js';
 
 function toCells(pixels, cols, termRows, pixelRows) {
     const frameBuf = new Array(termRows);
@@ -29,6 +30,7 @@ export class AnimeCmd extends CmdBase {
         const ox = Math.floor((this.term.cols - cols) / 2);
         const oy = Math.floor((this.term.rows - overlayH) / 2);
 
+        // Decode all frames
         let prevFrame = decodeRLE(rle0, cols * rows);
         const cellFrames = [toCells(prevFrame, cols, termRows, rows)];
         for (const diff of diffs) {
@@ -36,6 +38,7 @@ export class AnimeCmd extends CmdBase {
             cellFrames.push(toCells(prevFrame, cols, termRows, rows));
         }
 
+        // Create hint row
         const hintText = 'Press Ctrl+C to stop';
         const hintPad = Math.floor((cols - hintText.length) / 2);
         const def = defaultAttr();
@@ -47,17 +50,10 @@ export class AnimeCmd extends CmdBase {
             hintRow[hintPad + x] = cell;
         }
 
+        // Create buffer
         const buffer = createEmptyBuffer(cols, overlayH);
-        const overlay = {
-            y: oy, x: ox, h: overlayH, w: cols,
-            z: OverlayZ.FLASH,
-            owner: null,
-            getCell: makeOverlayGetCell(() => buffer, cols, overlayH),
-        };
 
-        this.holdBusy();
-        const gen = this.abortEpoch;
-
+        // Copy a frame to buffer
         const copyFrame = (frameIdx) => {
             const frame = cellFrames[frameIdx];
             for (let ty = 0; ty < termRows; ty++) {
@@ -68,35 +64,28 @@ export class AnimeCmd extends CmdBase {
             buffer[termRows] = hintRow;
         };
 
-        let rafId = null;
-        const cleanup = () => {
-            if (rafId) { cancelAnimationFrame(rafId); rafId = null; }
-            this.term.removeOverlay(overlay);
-            this.term.markAllDirty();
-            this.term.write(CURSOR_SHOW);
-            this.releaseBusy();
-        };
-
-        this.term.write(CURSOR_HIDE);
-
+        // Initialize
         copyFrame(0);
-        this.term.addOverlay(overlay);
-        this.term.markAllDirty();
 
+        // Start animation
         let frameIdx = 0;
-        let lastFrame = 0;
-        const TARGET_MS = 1000 / 30;
+        const getCell = makeOverlayGetCell(() => buffer, cols, overlayH);
 
-        const loop = (ts) => {
-            if (gen !== this.abortEpoch) { cleanup(); return; }
-            if (ts - lastFrame >= TARGET_MS) {
+        const animation = startBufferAnimation(
+            this,
+            getCell,
+            (ts, loopFrameIdx) => {
                 frameIdx = (frameIdx + 1) % cellFrames.length;
                 copyFrame(frameIdx);
                 this.term.markAllDirty();
-                lastFrame = ts;
+            },
+            {
+                y: oy,
+                x: ox,
+                w: cols,
+                h: overlayH,
+                frameDuration: 1000 / 30,  // 30fps
             }
-            rafId = requestAnimationFrame(loop);
-        };
-        rafId = requestAnimationFrame(loop);
+        );
     }
 }

@@ -1,5 +1,8 @@
 import { CmdBase } from './CmdBase.js';
 import { cyan, bold, yellow, white, red, magenta } from '../util/sgr.js';
+import { wrapInteractiveFlow } from '../system/InteractiveCommandHelper.js';
+import { DimensionalAggregator } from '../system/QuestionnaireHelper.js';
+import { shuffle } from '../util/random.js';
 
 export class MbtiCmd extends CmdBase {
     constructor() {
@@ -113,76 +116,67 @@ export class MbtiCmd extends CmdBase {
     }
 
     _shuffle(array) {
-        for (let i = array.length - 1; i > 0; i--) {
-            const j = Math.floor(Math.random() * (i + 1));
-            [array[i], array[j]] = [array[j], array[i]];
-        }
-        return array;
+        return shuffle(array);
     }
 
     async execute(args) {
-        try {
-            this.answers = [];
-
-            this.print('\r\n' + bold(cyan('=== MBTI 職業性格測驗 (互動版) ===')) + '\r\n');
-            this.print(yellow('使用 [左/右方向鍵] 切換選項，按 [Enter] 確認選擇，[Ctrl+C] 中斷退出。') + '\r\n\r\n');
+        await wrapInteractiveFlow(this, async (cmd) => {
+            cmd.print('\r\n' + bold(cyan('=== MBTI 職業性格測驗 (互動版) ===')) + '\r\n');
+            cmd.print(yellow('使用 [左/右方向鍵] 切換選項，按 [Enter] 確認選擇，[Ctrl+C] 中斷退出。') + '\r\n\r\n');
 
             const selected = [
-                ...this._shuffle([...this.pools.EI]).slice(0, 2),
-                ...this._shuffle([...this.pools.SN]).slice(0, 2),
-                ...this._shuffle([...this.pools.TF]).slice(0, 2),
-                ...this._shuffle([...this.pools.JP]).slice(0, 2),
+                ...shuffle([...this.pools.EI]).slice(0, 2),
+                ...shuffle([...this.pools.SN]).slice(0, 2),
+                ...shuffle([...this.pools.TF]).slice(0, 2),
+                ...shuffle([...this.pools.JP]).slice(0, 2),
             ];
 
-            this.questions = this._shuffle(selected);
+            this.questions = shuffle(selected);
+            this.answers = [];
 
             for (let i = 0; i < this.questions.length; i++) {
                 const q = this.questions[i];
                 const shuffled = Math.random() < 0.5;
                 const rowOpts = shuffled ? [q.bText, q.aText] : [q.aText, q.bText];
 
-                const result = await this.selectAsync({
+                const result = await cmd.selectAsync({
                     text: bold(cyan(`[問題 ${i + 1}/${this.questions.length}] `)) + bold(white(q.text)) + '\r\n',
                     options: [rowOpts],
                 });
 
                 if (!result) {
-                    this.term.write('\r\n' + red('^C 測驗已中斷') + '\r\n');
+                    cmd.term.write('\r\n' + red('^C 測驗已中斷') + '\r\n');
                     return;
                 }
 
                 const answer = shuffled ? (result.col === 0 ? 'B' : 'A') : (result.col === 0 ? 'A' : 'B');
                 this.answers.push(answer);
-                this.term.write('\r\n\r\n');
+                cmd.term.write('\r\n\r\n');
             }
 
             await this._showResults();
-        } finally {
-            this.close();
-        }
+        });
     }
 
     async _showResults() {
-        let e = 0, i = 0, s = 0, n = 0, t = 0, f = 0, j = 0, p = 0;
+        // Use DimensionalAggregator for scoring
+        const agg = new DimensionalAggregator({
+            dimensions: ['E/I', 'S/N', 'T/F', 'J/P'],
+            valuePairs: {
+                'E/I': { A: 'e', B: 'i' },
+                'S/N': { A: 's', B: 'n' },
+                'T/F': { A: 't', B: 'f' },
+                'J/P': { A: 'j', B: 'p' },
+            }
+        });
+
         for (let idx = 0; idx < this.answers.length; idx++) {
             const ans = this.answers[idx];
             const q = this.questions[idx];
-            if (q.dim === 'E/I') {
-                if (ans === 'A') e++; else i++;
-            } else if (q.dim === 'S/N') {
-                if (ans === 'A') s++; else n++;
-            } else if (q.dim === 'T/F') {
-                if (ans === 'A') t++; else f++;
-            } else if (q.dim === 'J/P') {
-                if (ans === 'A') j++; else p++;
-            }
+            agg.recordAnswer(q.dim, ans);
         }
 
-        const mbti =
-            (e >= i ? 'E' : 'I') +
-            (s >= n ? 'S' : 'N') +
-            (t >= f ? 'T' : 'F') +
-            (j >= p ? 'J' : 'P');
+        const mbti = agg.getFinalResult(['E/I', 'S/N', 'T/F', 'J/P']);
 
         const profiles = {
             INTJ: { title: '建築師 / 策劃者', desc: '獨立、具策略性、完美主義者。擁有強大的邏輯與系統思考能力。' },

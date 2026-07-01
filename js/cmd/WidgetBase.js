@@ -81,6 +81,25 @@ export class WidgetBase {
         if (this._intervalId) { clearInterval(this._intervalId); this._intervalId = null; }
     }
 
+    /**
+     * Start an interval that automatically stops on abort (Ctrl+C).
+     * @param {Function} fn - Function to call each interval
+     * @param {number} ms - Interval in milliseconds
+     * @param {CmdBase} cmd - Command instance (for abort epoch detection)
+     */
+    _startIntervalWithAbort(fn, ms, cmd) {
+        this._stopInterval();
+        const abortEpoch = cmd.abortEpoch;
+        const safeInterval = () => {
+            if (abortEpoch !== cmd.abortEpoch) {
+                this._stopInterval();
+                return;
+            }
+            fn();
+        };
+        this._intervalId = setInterval(safeInterval, ms);
+    }
+
     putc(x, y, ch, fg, bg, attrs) {
         if (y < 0 || y >= this._h || x < 0 || x >= this._w) return;
         const def = defaultAttr();
