@@ -56,7 +56,7 @@ export class DimensionalAggregator {
 
         if (aScore > bScore) return aKey;
         if (bScore > aScore) return bKey;
-        return null;  // Tie
+        return (Math.random() < 0.5) ? aKey : bKey;  // Tie
     }
 
     /**
