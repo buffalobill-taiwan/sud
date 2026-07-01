@@ -31,6 +31,9 @@ Frame stack moved from `DemoShell` to `SystemManager` (Jun 2026).
 Cmd ergonomics refactor (Jun 2026): `isTyping` → `_waitingForDrain`, `open()` method added,
 `select-grid.js` moved to `js/util/`, `quiz.js` `_genQuestion()` extracted.
 Directory restructure (Jun 2026): `js/` root split into `terminal/`, `system/`, `util/` subdirs.
+LineEditor rewrite (Jul 2026): `_redraw()` handles multi-row wrapped lines via
+`_cursorDisplayCol`/`_lastPromptRow` tracking, `\x1B[J` clear, and CUP positioning.
+`Screen.cursorBack`/`cursorForward` now wrap across rows (standard terminal behavior).
 
 ## Architecture
 
@@ -616,7 +619,7 @@ draw() {
 
 - `system.js`: SystemManager (singleton, typewriter, editor, mouse/drag, dialog positions, frame stack, execute, input routing, command registry, prompt, flash overlay) + WidgetManager
 - `CmdFrame.js`: Frame stack types (CmdFrame, SyncCmdFrame, DialogFrame, ShellFrame — cursor save/restore in `DialogFrame._saveCursor`/`finish`)
-- `LineEditor.js`: Line editing, history, tab completion
+- `LineEditor.js`: Line editing, history, tab completion; `_redraw()` uses `_cursorDisplayCol`/`_lastPromptRow` tracking + CUP for multi-row wrapped line support
 - `TextInputModel.js`: Low-level text input model (used by LineEditor + InputDialog)
 - `typewriter.js`: rAF-based animated command output
 

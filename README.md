@@ -32,6 +32,7 @@ dialogs, and TSR-style widgets.
 - Dialog framework (`MenuDialog`, `InputDialog`, `ShowDialog`) with overlay compositing
 - TSR widgets (clock, DVD logo) — draggable, position remembered
 - Tab completion for command names; command history (Up/Down)
+- Long multi-line input support with proper wrapping, backspace, and cursor navigation
 - `Ctrl+C` aborts running commands, typewriter animation, `sleep`, and `flash`
 
 ## Architecture
@@ -102,6 +103,10 @@ Open `index.html` in a modern browser, or visit the live demo:
 | Mouse wheel | Scroll scrollback (3 lines per tick) |
 | `Tab` | Command name completion |
 | `Up` / `Down` | Command history |
+| `Home` / `End` | Jump to start/end of input line |
+| `Ctrl+A` / `Ctrl+E` | Jump to start/end of input line |
+| `Ctrl+U` / `Ctrl+K` | Delete to start/end of input line |
+| `Ctrl+W` | Delete word before cursor |
 | `Ctrl+C` | Cancel input, abort command/typewriter |
 | `Ctrl+D` | EOF on empty line |
 | `Ctrl+L` | Clear screen and redraw prompt |
