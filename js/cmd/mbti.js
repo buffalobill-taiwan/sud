@@ -162,11 +162,11 @@ export class MbtiCmd extends CmdBase {
         // Use DimensionalAggregator for scoring
         const agg = new DimensionalAggregator({
             dimensions: ['E/I', 'S/N', 'T/F', 'J/P'],
-            valuePairs: {
-                'E/I': { A: 'e', B: 'i' },
-                'S/N': { A: 's', B: 'n' },
-                'T/F': { A: 't', B: 'f' },
-                'J/P': { A: 'j', B: 'p' },
+            scoringMap: {
+                'E/I': { A: { key: 'e', weight: 1 }, B: { key: 'i', weight: 1 } },
+                'S/N': { A: { key: 's', weight: 1 }, B: { key: 'n', weight: 1 } },
+                'T/F': { A: { key: 't', weight: 1 }, B: { key: 'f', weight: 1 } },
+                'J/P': { A: { key: 'j', weight: 1 }, B: { key: 'p', weight: 1 } },
             }
         });
 

@@ -1,25 +1,31 @@
 // Questionnaire and scoring helper
 
 /**
- * Creates a dimensional aggregator for multi-dimension questionnaires (e.g., MBTI).
- * @param {Object} config - { dimensions: string[], valuePairs: Object }
- *   dimensions: ['E/I', 'S/N', 'T/F', 'J/P']
- *   valuePairs: { 'E/I': {A: 'e', B: 'i'}, ...}
+ * Creates a dimensional aggregator for multi-dimension questionnaires.
+ * Supports any number of answer options per dimension (not just A/B pairs).
+ *
+ * @param {Object} config
+ * @param {string[]} config.dimensions - e.g. ['E/I', 'S/N', 'T/F', 'J/P']
+ * @param {Object} config.scoringMap - e.g.
+ *   { 'E/I': { A: { key: 'e', weight: 1 }, B: { key: 'i', weight: 1 } } }
+ *   Each answer maps to { key, weight }. Weight defaults to 1 if omitted.
  */
 export class DimensionalAggregator {
     constructor(config) {
         this.dimensions = config.dimensions || [];
-        this.valuePairs = config.valuePairs || {};
+        this.scoringMap = config.scoringMap || {};
         this.scores = {};
         this._initScores();
     }
 
     _initScores() {
         for (const dim of this.dimensions) {
-            const pair = this.valuePairs[dim];
-            if (pair) {
-                for (const key of Object.values(pair)) {
-                    this.scores[key] = 0;
+            const map = this.scoringMap[dim];
+            if (map) {
+                for (const answerKey of Object.keys(map)) {
+                    const entry = map[answerKey];
+                    const targetKey = typeof entry === 'string' ? entry : entry.key;
+                    if (!this.scores[targetKey]) this.scores[targetKey] = 0;
                 }
             }
         }
@@ -28,35 +34,58 @@ export class DimensionalAggregator {
     /**
      * Record an answer for a dimension.
      * @param {string} dimension - Dimension name (e.g., 'E/I')
-     * @param {string} answerKey - 'A' or 'B'
+     * @param {string} answerKey - e.g. 'A', 'B', 'strongly_agree'
+     * @param {number} weightOverride - Optional override weight
      */
-    recordAnswer(dimension, answerKey) {
-        const pair = this.valuePairs[dimension];
-        if (!pair) throw new Error(`Unknown dimension: ${dimension}`);
+    recordAnswer(dimension, answerKey, weightOverride) {
+        const map = this.scoringMap[dimension];
+        if (!map) throw new Error(`Unknown dimension: ${dimension}`);
 
-        const scoreKey = pair[answerKey];
-        if (!scoreKey) throw new Error(`Invalid answer key: ${answerKey}`);
+        const entry = map[answerKey];
+        if (!entry) throw new Error(`Invalid answer key "${answerKey}" for dimension "${dimension}"`);
 
-        this.scores[scoreKey]++;
+        const targetKey = typeof entry === 'string' ? entry : entry.key;
+        const weight = weightOverride != null ? weightOverride : (entry.weight != null ? entry.weight : 1);
+
+        this.scores[targetKey] = (this.scores[targetKey] || 0) + weight;
     }
 
     /**
      * Get the dominant key for a dimension.
+     * Returns the key with the highest score, or random on tie.
      * @param {string} dimension - Dimension name
-     * @returns {string} Dominant key or null if tied
+     * @returns {string|null} Dominant key
      */
     getDominant(dimension) {
-        const pair = this.valuePairs[dimension];
-        if (!pair) return null;
+        const map = this.scoringMap[dimension];
+        if (!map) return null;
 
-        const aKey = pair.A;
-        const bKey = pair.B;
-        const aScore = this.scores[aKey] || 0;
-        const bScore = this.scores[bKey] || 0;
+        const candidates = {};
+        for (const answerKey of Object.keys(map)) {
+            const entry = map[answerKey];
+            const targetKey = typeof entry === 'string' ? entry : entry.key;
+            candidates[targetKey] = (candidates[targetKey] || 0) + (this.scores[targetKey] || 0);
+        }
 
-        if (aScore > bScore) return aKey;
-        if (bScore > aScore) return bKey;
-        return (Math.random() < 0.5) ? aKey : bKey;  // Tie
+        const keys = Object.keys(candidates);
+        if (keys.length === 0) return null;
+        if (keys.length === 1) return keys[0];
+
+        let best = keys[0];
+        let tied = [keys[0]];
+        for (let i = 1; i < keys.length; i++) {
+            const k = keys[i];
+            if (candidates[k] > candidates[best]) {
+                best = k;
+                tied = [k];
+            } else if (candidates[k] === candidates[best]) {
+                tied.push(k);
+            }
+        }
+
+        return tied.length > 1
+            ? tied[Math.floor(Math.random() * tied.length)]
+            : best;
     }
 
     /**
@@ -77,54 +106,4 @@ export class DimensionalAggregator {
     getScores() {
         return { ...this.scores };
     }
-}
-
-/**
- * Helper to run a questionnaire loop with selection interface.
- * @param {CmdBase} cmd - Command instance
- * @param {Array<Object>} questions - Array of { dimension, text, options }
- * @param {Function} onAnswer - Called per answer: (question, row, col, value)
- * @param {Object} options - { onComplete?: Function }
- */
-export async function runQuestionnaireLoop(cmd, questions, onAnswer, options = {}) {
-    const answers = [];
-
-    for (let i = 0; i < questions.length; i++) {
-        const q = questions[i];
-
-        const result = await cmd.selectAsync({
-            text: `Question ${i + 1}/${questions.length}\n${q.text}\n`,
-            options: q.options,
-            onPick: (row, col, value) => {
-                answers.push({ question: q, row, col, value });
-                if (onAnswer) onAnswer(q, row, col, value);
-            },
-        });
-
-        if (!result) {
-            throw new Error('Questionnaire cancelled');
-        }
-    }
-
-    if (options.onComplete) {
-        options.onComplete(answers);
-    }
-
-    return answers;
-}
-
-/**
- * Calculate dimension scores from raw answers.
- * @param {Array<Object>} answers - Result from runQuestionnaireLoop()
- * @param {Function} scoringFn - Function(answer) -> { dimension, key }
- * @returns {DimensionalAggregator}
- */
-export function aggregateAnswers(answers, scoringFn, aggregator) {
-    for (const answer of answers) {
-        const { dimension, key } = scoringFn(answer);
-        if (dimension && key) {
-            aggregator.recordAnswer(dimension, key);
-        }
-    }
-    return aggregator;
 }
