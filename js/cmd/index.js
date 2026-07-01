@@ -20,4 +20,5 @@ export { AstrologyCmd } from './astrology.js';
 export { Art } from './art.js';
 export { Sleep } from './sleep.js';
 export { TimeCmd } from './time.js';
+export { FiveWillow } from './5willow.js';
 

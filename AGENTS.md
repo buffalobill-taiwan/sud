@@ -327,6 +327,18 @@ Z level.
 - `\x1B[0m` → reset to defaults
 - Non-SGR chars become `_makeCell(ch, attr)` entries in `buf[y]`
 
+### Custom SGR — Big mode
+
+`js/util/sgr.js:27-28` — two nonstandard SGR parameters for large text:
+
+| Code | Effect |
+|---|---|
+| `\x1B[500m` | `attr.big = true` (renders text at larger size) |
+| `\x1B[501m` | `attr.big = false` |
+
+Used by `echo --big` and other commands that support the `--big` flag to display
+a heading or title in enlarged type.
+
 ## POSIX Compliance Scope
 
 `SystemManager` + `ShellCmd` (CmdBase subclass) is a demo shell for a web-based 80×25 terminal emulator, not a
