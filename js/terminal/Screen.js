@@ -90,11 +90,33 @@ export class Screen {
     }
 
     cursorForward(n) {
-        this.curX = Math.min(this.cols - 1, this.curX + n);
+        const target = this.curX + n;
+        if (target >= this.cols) {
+            const rowsDown = Math.min(this.rows - 1 - this.curY, Math.floor(target / this.cols));
+            if (rowsDown > 0) {
+                this.markRowDirty(this.curY);
+                this.curY += rowsDown;
+                this.markRowDirty(this.curY);
+            }
+            this.curX = target % this.cols;
+        } else {
+            this.curX = target;
+        }
     }
 
     cursorBack(n) {
-        this.curX = Math.max(0, this.curX - n);
+        const target = this.curX - n;
+        if (target < 0) {
+            const rowsUp = Math.min(this.curY, Math.ceil(-target / this.cols));
+            if (rowsUp > 0) {
+                this.markRowDirty(this.curY);
+                this.curY -= rowsUp;
+                this.markRowDirty(this.curY);
+            }
+            this.curX = ((target % this.cols) + this.cols) % this.cols;
+        } else {
+            this.curX = target;
+        }
     }
 
     cursorPos(row, col) {

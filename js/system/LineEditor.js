@@ -5,6 +5,7 @@
  * history management, and tab completion display.
  */
 import { TextInputModel, parseCSI } from './TextInputModel.js';
+import { isWide } from '../util/unicode-width.js';
 
 export class LineEditor {
     constructor(term, callbacks = {}) {
@@ -19,6 +20,10 @@ export class LineEditor {
 
         this._commands = [];
         this._prompt   = '$ ';
+
+        this._cursorDisplayCol = 0;
+        this._lastTotalWidth   = 0;
+        this._lastPromptRow    = this.term.curY;
     }
 
     setCommands(names) { this._commands = names; }
@@ -30,18 +35,36 @@ export class LineEditor {
         this._model.reset();
         this.historyPos = -1;
         this._savedLine = null;
+        this._cursorDisplayCol = this._prompt.length;
+        this._lastTotalWidth   = this._prompt.length;
+        this._lastPromptRow    = this.term.curY;
     }
 
     // ── Rendering ─────────────────────────────────────────────────────────────
 
     _redraw() {
-        const after = this._model.widthRange(this._model.cursor, this._model.length);
-        this.term.write(
-            '\r' + this._prompt +
-            this._model.value +
-            '\x1B[K' +
-            (after > 0 ? `\x1B[${after}D` : '')
-        );
+        const cols = this.term.cols;
+        const promptLen = this._prompt.length;
+        const totalWidth = promptLen + this._model.widthRange(0, this._model.length);
+        const cursorDisplayCol = promptLen + this._model.widthRange(0, this._model.cursor);
+
+        const oldRowOffset = Math.max(0, this.term.curY - this._lastPromptRow);
+        if (oldRowOffset > 0) {
+            this.term.write(`\x1B[${oldRowOffset}A`);
+        }
+        this.term.write('\r');
+        const startY = this.term.curY;
+
+        this.term.write(this._prompt + this._model.value);
+        this.term.write('\x1B[J');
+
+        this._lastPromptRow = startY;
+        this._lastTotalWidth = totalWidth;
+        this._cursorDisplayCol = cursorDisplayCol;
+
+        const targetRow = startY + Math.floor(cursorDisplayCol / cols);
+        const targetCol = cursorDisplayCol % cols;
+        this.term.write(`\x1B[${targetRow + 1};${targetCol + 1}H`);
     }
 
     // ── History ───────────────────────────────────────────────────────────────
@@ -80,14 +103,12 @@ export class LineEditor {
         if (common.length > prefix.length) {
             const rest = common.slice(prefix.length);
             this._model.insert(rest);
-            this.term.write(rest);
+            this._redraw();
             return;
         }
         // Already at common prefix — show candidates
         this.term.write('\r\n' + matches.join('  ') + '\n');
-        this.term.write(this._prompt + this._model.value);
-        const after = this._model.widthRange(this._model.cursor, this._model.length);
-        if (after > 0) this.term.write(`\x1B[${after}D`);
+        this._redraw();
     }
 
     // ── Key handler ───────────────────────────────────────────────────────────
@@ -170,6 +191,7 @@ export class LineEditor {
                 this._model.insert(c);
                 if (this._model.cursor === this._model.length) {
                     this.term.write(c);                   // fast path: at end
+                    this._cursorDisplayCol += isWide(c) ? 2 : 1;
                 } else {
                     this._redraw();
                 }
@@ -186,8 +208,22 @@ export class LineEditor {
         switch (final) {
             case 'A': this._historyUp();   break;
             case 'B': this._historyDown(); break;
-            case 'C': { const w = m.charWidth(m.cursor); if (m.moveRight() !== 'none') this.term.write(`\x1B[${w}C`); break; }
-            case 'D': { const w = m.charWidth(m.cursor - 1); if (m.moveLeft()  !== 'none') this.term.write(`\x1B[${w}D`); break; }
+            case 'C': {
+                const w = m.charWidth(m.cursor);
+                if (m.moveRight() !== 'none') {
+                    this.term.write(`\x1B[${w}C`);
+                    this._cursorDisplayCol += w;
+                }
+                break;
+            }
+            case 'D': {
+                const w = m.charWidth(m.cursor - 1);
+                if (m.moveLeft()  !== 'none') {
+                    this.term.write(`\x1B[${w}D`);
+                    this._cursorDisplayCol -= w;
+                }
+                break;
+            }
             case 'H': if (m.moveHome() !== 'none') this._redraw(); break;
             case 'F': if (m.moveEnd()  !== 'none') this._redraw(); break;
             case '~':
