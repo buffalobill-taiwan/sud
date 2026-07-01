@@ -28,7 +28,7 @@ dialogs, and TSR-style widgets.
 ### Demo shell
 
 - Frame-stack command runner with rAF-based Typewriter output
-- 16 built-in commands (games, widgets, interactive tests — see below)
+- 19 built-in commands (games, widgets, interactive tests — see below)
 - Dialog framework (`MenuDialog`, `InputDialog`, `ShowDialog`) with overlay compositing
 - TSR widgets (clock, DVD logo) — draggable, position remembered
 - Tab completion for command names; command history (Up/Down)
@@ -79,6 +79,7 @@ Open `index.html` in a modern browser, or visit the live demo:
 | `art` | Render pixel art from a random artwork |
 | `ascii` | Show ANSI color chart (16-color + 256-color cube) |
 | `astrology` | Today's horoscope for your zodiac sign |
+| `5willow` | Print 五柳先生傳 (with `--big` for enlarged text) |
 | `calc` | Evaluate arithmetic expression |
 | `clear` | Clear screen |
 | `clock` | Toggle TSR clock widget |

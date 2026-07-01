@@ -12,7 +12,7 @@ Live demo: <https://buffalobill-taiwan.github.io/htmlterm/>
 | Terminal core (Screen/Parser/Renderer) | Complete |
 | Overlay compositing (widgets + dialogs) | Complete |
 | Frame-stack shell + Typewriter | Complete |
-| Demo commands | 18 registered (see Command Architecture) |
+| Demo commands | 19 registered (see Command Architecture) |
 | Automated tests | Excluded — manual testing only |
 | CI | Excluded — not planned |
 
@@ -408,7 +408,7 @@ js/cmd/
     └── DVDWidget.js
 ```
 
-**18 registered commands:** `anime`, `art`, `ascii`, `astrology`, `calc`, `clear`, `clock`,
+**19 registered commands:** `5willow`, `anime`, `art`, `ascii`, `astrology`, `calc`, `clear`, `clock`,
 `cowsay`, `date`, `dvd`, `echo`, `flash`, `help`, `menu`,
 `mbti`, `quiz`, `sleep`, `time`
 
