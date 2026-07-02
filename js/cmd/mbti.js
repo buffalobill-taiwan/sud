@@ -1,3 +1,4 @@
+import { term } from '../system/sys.js';
 import { CmdBase } from './CmdBase.js';
 import { cyan, bold, yellow, white, red, magenta } from '../util/sgr.js';
 import { wrapInteractiveFlow } from '../system/InteractiveCommandHelper.js';
@@ -145,13 +146,13 @@ export class MbtiCmd extends CmdBase {
                 });
 
                 if (!result) {
-                    cmd.term.write('\r\n' + red('^C 測驗已中斷') + '\r\n');
+                    term.write('\r\n' + red('^C 測驗已中斷') + '\r\n');
                     return;
                 }
 
                 const answer = shuffled ? (result.col === 0 ? 'B' : 'A') : (result.col === 0 ? 'A' : 'B');
                 this.answers.push(answer);
-                cmd.term.write('\r\n\r\n');
+                term.write('\r\n\r\n');
             }
 
             await this._showResults();

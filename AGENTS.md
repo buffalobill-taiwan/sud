@@ -34,6 +34,10 @@ Directory restructure (Jun 2026): `js/` root split into `terminal/`, `system/`, 
 LineEditor rewrite (Jul 2026): `_redraw()` handles multi-row wrapped lines via
 `_cursorDisplayCol`/`_lastPromptRow` tracking, `\x1B[J` clear, and CUP positioning.
 `Screen.cursorBack`/`cursorForward` now wrap across rows (standard terminal behavior).
+System Proxy refactor (Jul 2026): `js/system/sys.js` added — Proxy-based `system` and
+`term` exports replace direct `SystemManager.instance` access across all cmd files.
+All 14 cmd/widget files updated; zero remaining `SystemManager.instance` references
+in `js/cmd/`.
 
 ## Architecture
 
@@ -128,6 +132,31 @@ Dialog menu navigation is keyboard-only (`MenuDialog.handleKey`). Mouse is used
 for overlay drag repositioning, not item selection.
 
 ## Shell Architecture
+
+### System Proxy — `js/system/sys.js`
+
+`SystemManager.instance` is no longer accessed directly from command code.
+Instead, two Proxy objects (`system`, `term`) are exported from `js/system/sys.js`:
+
+```js
+export const system = new Proxy({}, {
+    get(_, prop) {
+        const s = instance();  // SystemManager.instance
+        const v = s[prop];
+        return typeof v === 'function' ? (...args) => v.apply(s, args) : v;
+    }
+});
+```
+
+The proxy wraps every property access with a live `SystemManager.instance` lookup,
+so it works correctly regardless of initialization order. Method calls on the proxy
+preserve `this` binding to `SystemManager`. All cmd files use these proxies;
+`SystemManager` is no longer imported in `js/cmd/`.
+
+`CmdBase` getters (`this.system` / `this.term`) return the proxies, so `CmdBase`
+subclass code via `this.system.xxx` / `this.term.xxx` works identically. Files
+outside `CmdBase` (widgets, ShellCmd, static menu helpers) import `system` or `term`
+directly from `'../system/sys.js'`.
 
 ### Frame stack — persistent ShellFrame
 
@@ -416,7 +445,7 @@ js/cmd/
 
 | Member | Purpose |
 |---|---|
-| `constructor()` | No parameters — `this.system` / `this.term` via getters on `SystemManager.instance` |
+| `constructor()` | No parameters — `this.system` / `this.term` via getters returning Proxy from `js/system/sys.js` |
 | `execute(args)` | Command logic, called with parsed arg array |
 | `print(text)` | Enqueues text to Typewriter via `this.system.print()` |
 | `readLine(callback)` | Request next line of input; callback receives trimmed string |
@@ -429,7 +458,7 @@ js/cmd/
 | `static get commandName()` | Command name string, e.g. `'cowsay'` |
 | `static get help()` | Description shown in `help` output |
 | `static get menu()` | Menu description or `null` to hide from menu |
-| `static openMenuDialog()` | (optional) Creates a menu dialog; uses `SystemManager.instance` |
+| `static openMenuDialog()` | (optional) Creates a menu dialog; import `system` from `'../system/sys.js'` |
 
 ### CmdBase.select() — 2D grid selection
 
@@ -629,6 +658,7 @@ draw() {
 
 ### `js/system/` — Shell system layer
 
+- `sys.js`: `system` / `term` Proxy exports — single access point for all cmd code (replaces direct `SystemManager.instance`)
 - `system.js`: SystemManager (singleton, typewriter, editor, mouse/drag, dialog positions, frame stack, execute, input routing, command registry, prompt, flash overlay) + WidgetManager
 - `CmdFrame.js`: Frame stack types (CmdFrame, SyncCmdFrame, DialogFrame, ShellFrame — cursor save/restore in `DialogFrame._saveCursor`/`finish`)
 - `LineEditor.js`: Line editing, history, tab completion; `_redraw()` uses `_cursorDisplayCol`/`_lastPromptRow` tracking + CUP for multi-row wrapped line support
@@ -657,7 +687,7 @@ draw() {
 ### `js/cmd/`
 
 - `index.js`: Barrel export for auto-registration
-- `CmdBase.js`: Command base class (no constructor params — `this.system` / `this.term` via getters on singleton)
+- `CmdBase.js`: Command base class (no constructor params — `this.system` / `this.term` via getters on Proxy from `js/system/sys.js`)
 - `ShellCmd.js`: Persistent shell REPL (CmdBase subclass)
 - `WidgetBase.js`: Overlay lifecycle, `_buffer`, `putc()`
 - `widgets/ClockWidget.js`: TSR clock (8 cells, 1s interval)

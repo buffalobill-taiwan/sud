@@ -1,4 +1,4 @@
-import { SystemManager } from '../system/system.js';
+import { system, term } from '../system/sys.js';
 import { red, bold, yellow, CURSOR_SHOW, CURSOR_HIDE } from '../util/sgr.js';
 import { ShowDialog } from '../dialog/ShowDialog.js';
 import { InputDialog } from '../dialog/InputDialog.js';
@@ -21,8 +21,8 @@ export class CmdBase {
     static get usage() { return null; }
     static get persistent() { return false; }
 
-    get system() { return SystemManager.instance; }
-    get term() { return SystemManager.instance.term; }
+    get system() { return system; }
+    get term() { return term; }
 
     execute(args) {}
     print(text) { this.system.print(text); }

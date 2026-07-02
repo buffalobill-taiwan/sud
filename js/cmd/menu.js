@@ -1,8 +1,9 @@
+import { system } from '../system/sys.js';
 import { CmdBase } from './CmdBase.js';
 
 export class MenuCmd extends CmdBase {
     execute(args) {
-        this.system.menuCmd();
+        system.menuCmd();
     }
     static get commandName() { return 'menu'; }
     static get help() { return 'Open command menu'; }

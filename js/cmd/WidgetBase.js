@@ -1,10 +1,10 @@
-import { SystemManager } from '../system/system.js';
+import { term } from '../system/sys.js';
 import { makeCell, defaultAttr, OverlayZ, createEmptyBuffer, makeOverlayGetCell } from '../util/sgr.js';
 import { addDragMethods, markDirtyRows } from '../util/drag.js';
 
 export class WidgetBase {
     constructor() {
-        this.term = SystemManager.instance.term;
+        this.term = term;
         this._y = 0;
         this._x = 0;
         this._w = 0;

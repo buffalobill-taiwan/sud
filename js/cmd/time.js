@@ -1,5 +1,5 @@
 import { CmdBase } from './CmdBase.js';
-import { SystemManager } from '../system/system.js';
+import { system } from '../system/sys.js';
 import { InputDialog } from '../dialog/index.js';
 
 export class TimeCmd extends CmdBase {
@@ -11,13 +11,13 @@ export class TimeCmd extends CmdBase {
 
         const target = args.join(' ');
         const startTime = performance.now();
-        const stackDepth = this.system.cmdStack.length;
+        const stackDepth = system.cmdStack.length;
 
-        this.system.execCmd(target);
+        system.execCmd(target);
 
         return new Promise(resolve => {
-            const remove = this.system.addFramePopHook(() => {
-                if (this.system.cmdStack.length === stackDepth) {
+            const remove = system.addFramePopHook(() => {
+                if (system.cmdStack.length === stackDepth) {
                     remove();
                     const elapsed = performance.now() - startTime;
                     this.print(`\n\x1B[2mTime: ${elapsed.toFixed(2)}ms\x1B[0m\n`);
@@ -28,7 +28,6 @@ export class TimeCmd extends CmdBase {
     }
 
     static openMenuDialog() {
-        const system = SystemManager.instance;
         system.createDialog(InputDialog, 'time-input', {
             title: 'Time a Command',
             prompt: 'Enter command:',

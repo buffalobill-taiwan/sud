@@ -1,3 +1,4 @@
+import { system } from '../system/sys.js';
 import { CmdBase } from './CmdBase.js';
 
 export class ShellCmd extends CmdBase {
@@ -10,12 +11,12 @@ export class ShellCmd extends CmdBase {
     }
 
     handleKey(data) {
-        this.system.editor.handleKey(data);
+        system.editor.handleKey(data);
         return true;
     }
 
     showPrompt() {
-        const s = this.system;
+        const s = system;
         s.term.write(s.prompt);
         s.editor.reset();
         s.flushQueuedInput();
@@ -24,7 +25,7 @@ export class ShellCmd extends CmdBase {
     close() {}
 
     onCancel() {
-        this.system.term.write('^C\n');
+        system.term.write('^C\n');
         this.showPrompt();
     }
 }

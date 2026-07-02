@@ -1,5 +1,5 @@
 import { CmdBase } from './CmdBase.js';
-import { SystemManager } from '../system/system.js';
+import { system } from '../system/sys.js';
 import { cyan, bold, green, red, white } from '../util/sgr.js';
 import { InputDialog, ShowDialog } from '../dialog/index.js';
 
@@ -33,7 +33,6 @@ export class Quiz extends CmdBase {
     static get menu() { return 'Math Quiz'; }
 
     static openMenuDialog() {
-        const system = SystemManager.instance;
         const { a, b, op, answer } = Quiz._genQuestion();
 
         system.createDialog(InputDialog, 'quiz', {

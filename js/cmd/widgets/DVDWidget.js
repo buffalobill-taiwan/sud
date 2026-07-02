@@ -1,3 +1,4 @@
+import { term } from '../../system/sys.js';
 import { WidgetBase } from '../WidgetBase.js';
 
 const COLORS = [1, 2, 3, 4, 5, 6, 9, 10, 11, 12, 13, 14];
@@ -12,8 +13,8 @@ export class DVDWidget extends WidgetBase {
         super();
         this._w = 7;
         this._h = 3;
-        const cols = this.term.cols;
-        const rows = this.term.rows;
+        const cols = term.cols;
+        const rows = term.rows;
         this.setPosition(Math.floor((cols - this._w) / 2), Math.floor((rows - this._h) / 2));
         this._dx = 1;
         this._dy = 1;
@@ -70,12 +71,12 @@ export class DVDWidget extends WidgetBase {
         let ny = this._y + this._dy;
 
         let bounced = false;
-        if (nx < 0 || nx + this._w > this.term.cols) {
+        if (nx < 0 || nx + this._w > term.cols) {
             this._dx = -this._dx;
             nx = this._x + this._dx;
             bounced = true;
         }
-        if (ny < 0 || ny + this._h > this.term.rows) {
+        if (ny < 0 || ny + this._h > term.rows) {
             this._dy = -this._dy;
             ny = this._y + this._dy;
             bounced = true;
@@ -88,7 +89,7 @@ export class DVDWidget extends WidgetBase {
         this.setPosition(nx, ny);
 
         for (let r = oldY; r < oldY + this._h; r++) {
-            if (r >= 0 && r < this.term.rows) this.term.markRowDirty(r);
+            if (r >= 0 && r < term.rows) term.markRowDirty(r);
         }
 
         this.draw();

@@ -1,3 +1,4 @@
+import { system } from '../system/sys.js';
 import { CmdBase } from './CmdBase.js';
 import { ARTWORKS } from './art.js';
 
@@ -17,11 +18,11 @@ export class Flash extends CmdBase {
                 const loader = ARTWORKS[Math.floor(Math.random() * ARTWORKS.length)];
                 loaded.push(await loader());
             }
-            this.system.flashArt(loaded);
+            system.flashArt(loaded);
         } else if (border) {
-            this.system.flashBorder(count);
+            system.flashBorder(count);
         } else {
-            this.system.flash(count);
+            system.flash(count);
         }
     }
 

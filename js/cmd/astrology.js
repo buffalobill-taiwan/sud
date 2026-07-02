@@ -1,3 +1,4 @@
+import { term } from '../system/sys.js';
 import { CmdBase } from './CmdBase.js';
 import { cyan, bold, green, yellow, white, red } from '../util/sgr.js';
 
@@ -88,7 +89,7 @@ export class AstrologyCmd extends CmdBase {
                 ['射手座', '摩羯座', '水瓶座', '雙魚座'],
             ],
             onPick: (row, col, value) => {
-                this.term.write('\r\n\r\n');
+                term.write('\r\n\r\n');
                 this.showFortune(row * 4 + col);
             },
         });
@@ -112,7 +113,7 @@ export class AstrologyCmd extends CmdBase {
     }
 
     onCancel() {
-        this.term.write('\r\n' + red('^C 已取消') + '\r\n');
+        term.write('\r\n' + red('^C 已取消') + '\r\n');
         this.close();
     }
 

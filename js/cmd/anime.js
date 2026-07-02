@@ -1,3 +1,4 @@
+import { term } from '../system/sys.js';
 import { CmdBase } from './CmdBase.js';
 import { decodeRLE, applyDiff } from '../util/pixel-codec.js';
 import { createEmptyBuffer, makeOverlayGetCell, makeCell, defaultAttr } from '../util/sgr.js';
@@ -27,8 +28,8 @@ export class AnimeCmd extends CmdBase {
         const { cols, rows, frames: numFrames, rle0, diffs } = data;
         const termRows = rows / 2;
         const overlayH = termRows + 1;
-        const ox = Math.floor((this.term.cols - cols) / 2);
-        const oy = Math.floor((this.term.rows - overlayH) / 2);
+        const ox = Math.floor((term.cols - cols) / 2);
+        const oy = Math.floor((term.rows - overlayH) / 2);
 
         // Decode all frames
         let prevFrame = decodeRLE(rle0, cols * rows);
@@ -77,7 +78,7 @@ export class AnimeCmd extends CmdBase {
             (ts, loopFrameIdx) => {
                 frameIdx = (frameIdx + 1) % cellFrames.length;
                 copyFrame(frameIdx);
-                this.term.markAllDirty();
+                term.markAllDirty();
             },
             {
                 y: oy,
