@@ -18,7 +18,7 @@ export class ShellCmd extends CmdBase {
         const s = this.system;
         s.term.write(s.prompt);
         s.editor.reset();
-        s._flushQueuedInput();
+        s.flushQueuedInput();
     }
 
     close() {}

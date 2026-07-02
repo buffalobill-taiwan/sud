@@ -11,13 +11,13 @@ export class TimeCmd extends CmdBase {
 
         const target = args.join(' ');
         const startTime = performance.now();
-        const stackDepth = this.system._cmdStack.length;
+        const stackDepth = this.system.cmdStack.length;
 
-        this.system._execCmd(target);
+        this.system.execCmd(target);
 
         return new Promise(resolve => {
             const remove = this.system.addFramePopHook(() => {
-                if (this.system._cmdStack.length === stackDepth) {
+                if (this.system.cmdStack.length === stackDepth) {
                     remove();
                     const elapsed = performance.now() - startTime;
                     this.print(`\n\x1B[2mTime: ${elapsed.toFixed(2)}ms\x1B[0m\n`);
@@ -29,7 +29,7 @@ export class TimeCmd extends CmdBase {
 
     static openMenuDialog() {
         const system = SystemManager.instance;
-        system._createDialog(InputDialog, 'time-input', {
+        system.createDialog(InputDialog, 'time-input', {
             title: 'Time a Command',
             prompt: 'Enter command:',
             footer: 'Enter Confirm  ESC Back',
@@ -39,7 +39,7 @@ export class TimeCmd extends CmdBase {
                     system.menuDialog.close();
                     system.menuDialog = null;
                 }
-                system._execCmd('time ' + expr.trim());
+                system.execCmd('time ' + expr.trim());
             },
             onCancel: () => {},
         });

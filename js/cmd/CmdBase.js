@@ -6,8 +6,6 @@ import { defaultGridMove, defaultGridRender } from '../util/select-grid.js';
 
 export class CmdBase {
     constructor() {
-        this.system = SystemManager.instance;
-        this.term = this.system.term;
         this.closed = true;
         this._awaitingTypewriterDrain = false;
         // Monotonically-increasing version number used by printThen() to detect stale
@@ -22,6 +20,9 @@ export class CmdBase {
     static get menu() { return null; }
     static get usage() { return null; }
     static get persistent() { return false; }
+
+    get system() { return SystemManager.instance; }
+    get term() { return SystemManager.instance.term; }
 
     execute(args) {}
     print(text) { this.system.print(text); }
@@ -95,7 +96,7 @@ export class CmdBase {
         if (this.closed) return;
         this.closed = true;
         this.term.write(CURSOR_SHOW);
-        this.system._tick();
+        this.system.tick();
     }
 
     // Opens the command for interactive input (paired with close()).

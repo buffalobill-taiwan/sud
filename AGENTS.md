@@ -131,7 +131,7 @@ for overlay drag repositioning, not item selection.
 
 ### Frame stack — persistent ShellFrame
 
-`SystemManager` owns the frame stack (`_cmdStack`). A persistent `ShellFrame`
+`SystemManager` owns the frame stack (`cmdStack`). A persistent `ShellFrame`
 (`CmdFrame` subclass) always sits at the bottom — the stack is never empty
 during normal operation. Each executing entity is a `CmdFrame` that controls
 I/O while on top of the stack:
@@ -156,7 +156,7 @@ execute("flash --art")       → push SyncCmdFrame → async handler loads artwo
 execute("art")               → push SyncCmdFrame → handler returns Promise
                                → block on _asyncPending → promise resolves
                                → typewriter active → block → drain → finish → pop → prompt
-execute("menu")              → push SyncCmdFrame → handler calls _createDialog
+execute("menu")              → push SyncCmdFrame → handler calls createDialog
                                → push DialogFrame(menuDlg) atop SyncCmdFrame
                                → SyncCmdFrame done (buried under DialogFrame)
                                → dialog I/O until close → pop chain → ShellFrame shows prompt
@@ -173,14 +173,14 @@ User input
   → terminal.js _onKeyDown → handleInput(data)
     → shell.handleInput(data)
       → system.handleInput(data)
-        → top = _cmdStack[last]
+        → top = cmdStack[last]
           → top.handleInput?          → frame handles (dialog, readLine, etc.)
           → top.blocked && Ctrl+C?    → _abortAll()
           → top.blocked?              → _queuedInput.push(data)
           → !top? && typewriter.active → _queuedInput or Ctrl+C
-          → !top? && _readLinePending? → _handleReadLineInput
+          → !top? && readLineState? → _handleReadLineInput
           → else                      → LineEditor.handleKey(data)
-            → Enter: onExecute(line) → system.execute(line) → push SyncCmdFrame → _tick
+            → Enter: onExecute(line) → system.execute(line) → push SyncCmdFrame → tick
 ```
 
 ### Input routing priority
@@ -190,10 +190,10 @@ User input
 | Priority | Condition | Handler |
 |---|---|---|
 | 1 | `top.handleInput` (DialogFrame / SyncCmdFrame) | `frame.handleInput(data)` → auto-unblock → pop |
-| 2 | `_readLinePending` | `_handleReadLineInput(data)` |
+| 2 | `readLineState` active | `_handleReadLineInput(data)` |
 | 3 | `top.blocked` | Ctrl+C → `_abortAll()`; else queue |
 | 4 | No frame + typewriter active | Ctrl+C → `_abortAll()`; else queue |
-| 5 | No frame + `_readLinePending` | `_handleReadLineInput(data)` |
+| 5 | No frame + `readLineState` active | `_handleReadLineInput(data)` |
 | 6 | (normal) | `editor.handleKey(data)` |
 
 ### Output routing
@@ -211,7 +211,7 @@ User input
 
 `_processStack()` (`system.js`) is the single gate for advancing the frame
 stack and showing the next prompt. Called from every completion path via
-`this._tick()`:
+`this.tick()`:
 
 - `onExecute` after `execute()` pushes a frame
 - `onShowPrompt` from LineEditor (Ctrl+C, Ctrl+D, Ctrl+L)
@@ -224,7 +224,7 @@ stack and showing the next prompt. Called from every completion path via
 The loop pops done frames and shows the `$` prompt only when **all** of:
 1. ShellFrame is top of the frame stack
 2. `_pendingActivate` flag is set (ShellFrame became top after a frame pop, or `execute('')` re-armed it)
-3. No typewriter animation running, no `_busy`, no `_readLineState`
+3. No typewriter animation running, no `_busy`, no `readLineState`
 
 Condition 3's guard prevents the prompt from showing too early (e.g., during
 readLine input or command output animation). If a guard blocks the prompt,
@@ -240,7 +240,7 @@ _processStack() {
         if (frame.blocked) return;
         if (frame.persistent) {
             if (frame._pendingActivate) {
-                if (typewriter || _busy || _readLineState) return;  // guard — don't consume flag
+                if (typewriter || _busy || readLineState) return;  // guard — don't consume flag
                 frame.onActivate();
                 frame._pendingActivate = false;
             }
@@ -267,7 +267,7 @@ is actually ready for input.
 |---|---|---|
 | Animated output | `this.print(text)` | Enqueues via Typewriter; frame blocks on it |
 | Instant output | `this.term.write(text)` | Bypasses Typewriter — use with care |
-| Interactive input | `this.readLine(callback)` | Callback receives trimmed string; frame blocks via `_readLinePending` |
+| Interactive input | `this.readLine(callback)` | Callback receives trimmed string; frame blocks via `readLineState` |
 | **Interactive select** | `this.select()` | Calls `open()` internally; SyncCmdFrame routes keys via `cmd.handleKey` |
 | Busy-wait / async | `this.holdBusy()` / `this.releaseBusy()` | Frame blocks via `_busy` until released |
 | Cancel-safe async | `this.abortGeneration` | Compare on re-entry to detect Ctrl+C abort |
@@ -416,7 +416,7 @@ js/cmd/
 
 | Member | Purpose |
 |---|---|
-| `constructor()` | No parameters — `this.system` / `this.term` from `SystemManager.instance` |
+| `constructor()` | No parameters — `this.system` / `this.term` via getters on `SystemManager.instance` |
 | `execute(args)` | Command logic, called with parsed arg array |
 | `print(text)` | Enqueues text to Typewriter via `this.system.print()` |
 | `readLine(callback)` | Request next line of input; callback receives trimmed string |
@@ -494,11 +494,11 @@ Commands that need multi-line interaction (e.g. `quiz`) use `readLine`:
 
 ```
 CmdBase.readLine(callback)
-  → system.readLine(callback)    // sets this._readLinePending + this._readLineBuffer = ''
-  → handleInput checks _readLinePending (priority 2, see Shell Architecture)
-  → characters accumulated in _readLineBuffer (NOT this.line)
-  → Enter: callback(_readLineBuffer.trim()), then _tick()
-  → Ctrl+C: cancel, showPrompt via _tick()
+  → system.readLine(callback)    // sets readLineState = { editor }
+  → handleInput checks readLineState (priority 2, see Shell Architecture)
+  → characters accumulated in editor buffer (NOT this.line)
+  → Enter: callback(_readLineBuffer.trim()), then tick()
+  → Ctrl+C: cancel, showPrompt via tick()
 ```
 
 **Critical rule:** `_readLineBuffer` is completely independent from `this.line`.
@@ -519,7 +519,7 @@ input arrives only through the callback parameter.
 | Newline | 1 credit (as char) | `\n` |
 
 - `CmdBase.print()` → `system.print()` → `Typewriter.enqueue()`
-- Shell defers prompt until typewriter drain (via `_tick` → `_processStack`)
+- Shell defers prompt until typewriter drain (via `tick` → `_processStack`)
 - Only `Ctrl+C` passes through during animation (aborts + shows prompt)
 - Dialog rendering, widget buffers, and shell prompt bypass typewriter
 
@@ -657,7 +657,7 @@ draw() {
 ### `js/cmd/`
 
 - `index.js`: Barrel export for auto-registration
-- `CmdBase.js`: Command base class (no constructor params — `this.system` from singleton)
+- `CmdBase.js`: Command base class (no constructor params — `this.system` / `this.term` via getters on singleton)
 - `ShellCmd.js`: Persistent shell REPL (CmdBase subclass)
 - `WidgetBase.js`: Overlay lifecycle, `_buffer`, `putc()`
 - `widgets/ClockWidget.js`: TSR clock (8 cells, 1s interval)

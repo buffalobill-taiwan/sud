@@ -24,7 +24,7 @@ export class Calc extends CmdBase {
 
     static openMenuDialog() {
         const system = SystemManager.instance;
-        system._createDialog(InputDialog, 'calc', {
+        system.createDialog(InputDialog, 'calc', {
             title: '請輸入算式',
             prompt: '算式：',
             footer: 'Enter Confirm  ESC Back',
@@ -34,7 +34,7 @@ export class Calc extends CmdBase {
                 try { msg = String(safeEval(expr)); }
                 catch (e) { msg = red('Error:') + ' ' + (e.message || 'invalid expression'); }
                 setTimeout(() => {
-                    system._createDialog(ShowDialog, 'show', { message: msg, onExit: () => {} });
+                    system.createDialog(ShowDialog, 'show', { message: msg, onExit: () => {} });
                 }, 0);
             },
             onCancel: () => {},

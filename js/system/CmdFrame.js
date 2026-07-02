@@ -43,7 +43,7 @@ export class SyncCmdFrame extends CmdFrame {
                 this._asyncPending = true;
                 result.then(() => {
                     this._asyncPending = false;
-                    if (!this.done) this.system._tick();
+                    if (!this.done) this.system.tick();
                 });
                 return;
             }
@@ -103,7 +103,7 @@ export class DialogFrame extends CmdFrame {
             this.term.curX = s.x;
             this.term.curY = s.y;
         }
-        for (const fn of (this.system._dialogRestoreHooks || [])) fn();
+        for (const fn of (this.system.dialogRestoreHooks || [])) fn();
         super.finish();
     }
 
@@ -137,7 +137,7 @@ export class ShellFrame extends CmdFrame {
     }
 
     handleInput(data) {
-        if (this.system._readLineState) return false;
+        if (this.system.readLineState) return false;
         this.cmd.handleKey(data);
         return true;
     }

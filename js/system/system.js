@@ -13,22 +13,22 @@ export class SystemManager {
         SystemManager.instance = this;
         this.term = term;
 
-        this._cmdStack = [];
+        this.cmdStack = [];
         this._tickQueued = false;
         this._queuedInput = [];
         this._busy = false;
-        this._readLineState = null;
+        this.readLineState = null;
         this._abortEpoch = 0;
         this._flashOv = null;
         this._flashTimerId = null;
         this._framePopHooks = [];
 
         this.typewriter = new Typewriter(this.term);
-        this.typewriter.onDrain(() => this._tick());
+        this.typewriter.onDrain(() => this.tick());
 
         this.editor = new LineEditor(this.term, {
             onExecute: (line) => this.execute(line),
-            onShowPrompt: () => this._tick(),
+            onShowPrompt: () => this.tick(),
         });
 
         this.cmdList = [];
@@ -38,7 +38,7 @@ export class SystemManager {
         this.prompt = '$ ';
         this.running = false;
 
-        this._dialogRestoreHooks = [];
+        this.dialogRestoreHooks = [];
         this._dialogPositions = {};
 
         this.widgetManager = new WidgetManager();
@@ -75,7 +75,7 @@ export class SystemManager {
         this.term.write('Type ' + yellow('help') + ' for available commands.\n\n');
         this.term.write(gray('AEIOUÀÈÌÒÙ金木水火土鑫森淼焱垚あいうえおアイウエオ✂✓✕✨❄') + '\n\n');
         this._pushFrame(new ShellFrame(new ShellCmd()));
-        this._tick();
+        this.tick();
     }
 
     get busy() { return this._busy; }
@@ -84,14 +84,14 @@ export class SystemManager {
     holdBusy() { this._busy = true; }
     releaseBusy() {
         this._busy = false;
-        this._tick();
+        this.tick();
     }
 
     print(text) {
         this.typewriter.enqueue(text);
     }
 
-    _tick() {
+    tick() {
         if (this._tickQueued) return;
         this._tickQueued = true;
         Promise.resolve().then(() => {
@@ -101,7 +101,7 @@ export class SystemManager {
     }
 
     _pushFrame(frame) {
-        this._cmdStack.push(frame);
+        this.cmdStack.push(frame);
     }
 
     addFramePopHook(fn) {
@@ -114,19 +114,19 @@ export class SystemManager {
 
     _processStack() {
         while (true) {
-            while (this._cmdStack.length > 0 && this._cmdStack[this._cmdStack.length - 1].done) {
-                this._cmdStack.pop();
+            while (this.cmdStack.length > 0 && this.cmdStack[this.cmdStack.length - 1].done) {
+                this.cmdStack.pop();
                 for (const fn of this._framePopHooks.slice()) fn();
-                if (this._cmdStack.length > 0 && this._cmdStack[this._cmdStack.length - 1].persistent) {
-                    this._cmdStack[this._cmdStack.length - 1]._pendingActivate = true;
+                if (this.cmdStack.length > 0 && this.cmdStack[this.cmdStack.length - 1].persistent) {
+                    this.cmdStack[this.cmdStack.length - 1]._pendingActivate = true;
                 }
             }
 
-            if (this._cmdStack.length === 0) {
+            if (this.cmdStack.length === 0) {
                 return;
             }
 
-            const frame = this._cmdStack[this._cmdStack.length - 1];
+            const frame = this.cmdStack[this.cmdStack.length - 1];
 
             if (!frame.started) {
                 frame.started = true;
@@ -138,10 +138,10 @@ export class SystemManager {
 
             if (frame.persistent) {
                 if (frame._pendingActivate) {
-                    if (this.typewriter.isActive() || this._busy || this._readLineState) return;
+                    if (this.typewriter.isActive() || this._busy || this.readLineState) return;
                     frame.onActivate();
                     frame._pendingActivate = false;
-                    this._flushQueuedInput();
+                    this.flushQueuedInput();
                 }
                 return;
             }
@@ -150,12 +150,12 @@ export class SystemManager {
         }
     }
 
-    _execCmd(line) {
+    execCmd(line) {
         const trimmed = line.trim();
         if (trimmed.length === 0) {
-            const top = this._cmdStack[this._cmdStack.length - 1];
+            const top = this.cmdStack[this.cmdStack.length - 1];
             if (top && top.persistent) top._pendingActivate = true;
-            this._tick();
+            this.tick();
             return;
         }
 
@@ -170,53 +170,53 @@ export class SystemManager {
         } else {
             this._pushFrame(new SyncCmdFrame(cmd, args, null));
         }
-        this._tick();
+        this.tick();
     }
 
     execute(line) {
         this.editor.history.push(line.trim());
         if (this.editor.history.length > 100) this.editor.history.shift();
-        this._execCmd(line);
+        this.execCmd(line);
     }
 
     readLine(callback) {
-        if (this._readLineState) {
+        if (this.readLineState) {
             warn('readLine called while another readLine is pending — overwriting');
         }
         const editor = new LineEditor(this.term, {
             onExecute: (line) => {
-                this._readLineState = null;
+                this.readLineState = null;
                 callback(line.trim());
-                this._tick();
+                this.tick();
             },
             onShowPrompt: () => {
                 // Ctrl+C / Ctrl+D inside readLine — cancel
-                this._readLineState = null;
-                this._tick();
+                this.readLineState = null;
+                this.tick();
             },
         });
         editor.setPrompt('');
-        this._readLineState = { editor };
+        this.readLineState = { editor };
     }
 
     _handleReadLineInput(data) {
-        this._readLineState.editor.handleKey(data);
+        this.readLineState.editor.handleKey(data);
     }
 
     _abortAll() {
         this._abortEpoch++;
         this._busy = false;
         this._queuedInput = [];
-        this._readLineState = null;
+        this.readLineState = null;
         this._framePopHooks = [];
-        while (this._cmdStack.length > 1) this._cmdStack.pop();
+        while (this.cmdStack.length > 1) this.cmdStack.pop();
         this.typewriter.abort();
         this._flashCleanup();
         this.term.write('^C\n');
-        if (this._cmdStack.length === 1 && this._cmdStack[0].persistent) {
-            this._cmdStack[0]._pendingActivate = true;
+        if (this.cmdStack.length === 1 && this.cmdStack[0].persistent) {
+            this.cmdStack[0]._pendingActivate = true;
         }
-        this._tick();
+        this.tick();
     }
 
     _checkCtrlC(data) {
@@ -234,15 +234,15 @@ export class SystemManager {
     handleInput(data) {
         if (!this.running) return;
 
-        const top = this._cmdStack[this._cmdStack.length - 1];
+        const top = this.cmdStack[this.cmdStack.length - 1];
 
         if (top) {
             if (top.handleInput) {
                 const handled = top.handleInput(data);
-                if (top.done) this._tick();
+                if (top.done) this.tick();
                 if (handled) return;
             }
-            if (this._readLineState) {
+            if (this.readLineState) {
                 this._handleReadLineInput(data);
                 return;
             }
@@ -250,7 +250,7 @@ export class SystemManager {
                 this._checkCtrlC(data);
                 return;
             }
-            this._tick();
+            this.tick();
             return;
         }
 
@@ -258,7 +258,7 @@ export class SystemManager {
             this._checkCtrlC(data);
             return;
         }
-        if (this._readLineState) {
+        if (this.readLineState) {
             this._handleReadLineInput(data);
             return;
         }
@@ -271,10 +271,10 @@ export class SystemManager {
         dlg.open();
         frame.started = true;
         this._pushFrame(frame);
-        this._tick();
+        this.tick();
     }
 
-    _flushQueuedInput() {
+    flushQueuedInput() {
         const batch = this._queuedInput;
         this._queuedInput = [];
         for (let i = 0; i < batch.length; i++) {
@@ -287,12 +287,12 @@ export class SystemManager {
     }
 
     addDialogRestoreHook(fn) {
-        this._dialogRestoreHooks.push(fn);
+        this.dialogRestoreHooks.push(fn);
     }
 
     removeDialogRestoreHook(fn) {
-        const i = this._dialogRestoreHooks.indexOf(fn);
-        if (i >= 0) this._dialogRestoreHooks.splice(i, 1);
+        const i = this.dialogRestoreHooks.indexOf(fn);
+        if (i >= 0) this.dialogRestoreHooks.splice(i, 1);
     }
 
     handleMouse(type, info) {
@@ -328,7 +328,7 @@ export class SystemManager {
         return false;
     }
 
-    _createDialog(DialogClass, key, opts, ...ctorArgs) {
+    createDialog(DialogClass, key, opts, ...ctorArgs) {
         const pos = this._dialogPositions[key] || {};
         const dlg = new DialogClass(this.term, ...ctorArgs, {
             ...opts,
@@ -342,7 +342,7 @@ export class SystemManager {
 
     menuCmd() {
         this.menuDialog = null;
-        const menuDlg = this._createDialog(MenuDialog, 'menu', {
+        const menuDlg = this.createDialog(MenuDialog, 'menu', {
             width: 44,
             title: 'Command Menu',
             footer: '↑↓ Move  PgUp/Dn Page  ↩ Run  ESC Quit',
