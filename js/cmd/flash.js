@@ -5,7 +5,9 @@ import { screenFlash, borderFlash, artSequence } from '../util/flash-helper.js';
 
 export class Flash extends CmdBase {
     async execute(args) {
-        const p = this.parseArgs(args);
+        const p = this.parseArgs(args, {
+            flags: { '--art': Boolean, '-a': Boolean, '--border': Boolean, '-b': Boolean },
+        });
         const art = p.flag('--art', '-a');
         const border = art ? null : p.flag('--border', '-b');
         const count = p.rest.length > 0 ? parseInt(p.rest[0], 10) : 1;

@@ -1,4 +1,5 @@
 import { makeCell, defaultAttr, OverlayZ } from './sgr.js';
+import { scheduleWithAbort, createAbortGuard } from '../system/BusyAsyncHelper.js';
 
 const FLASH_WHITE = makeCell(' ', (() => {
     const a = defaultAttr();
@@ -15,45 +16,29 @@ function _createOverlay(term, getCell) {
     };
 }
 
-function _isAborted(cmd, gen) {
-    return cmd.abortEpoch !== gen;
-}
-
-function _cleanup(term, state) {
-    if (state.timerId !== null) {
-        clearTimeout(state.timerId);
-        state.timerId = null;
-    }
-    if (state.ov !== null) {
-        term.removeOverlay(state.ov);
-        term.markAllDirty();
-        state.ov = null;
-    }
-}
-
 function _runFlashSequence(cmd, term, count, getCell) {
     if (count < 1) return;
-    const gen = cmd.abortEpoch;
-    const state = { timerId: null, ov: null, remaining: count };
+    let remaining = count;
+    let ov = null;
+
+    function cleanup() {
+        if (ov) { term.removeOverlay(ov); term.markAllDirty(); ov = null; }
+    }
 
     function cycle() {
-        if (_isAborted(cmd, gen)) { _cleanup(term, state); return; }
-        if (state.remaining <= 0) { _cleanup(term, state); cmd.releaseBusy(); return; }
+        if (remaining <= 0) { cleanup(); cmd.releaseBusy(); return; }
 
-        state.ov = _createOverlay(term, getCell);
-        term.addOverlay(state.ov);
+        ov = _createOverlay(term, getCell);
+        term.addOverlay(ov);
         term.markAllDirty();
 
-        state.timerId = setTimeout(() => {
-            state.timerId = null;
-            if (_isAborted(cmd, gen)) { _cleanup(term, state); return; }
-            _cleanup(term, state);
-            state.remaining--;
-            if (state.remaining > 0) {
-                state.timerId = setTimeout(() => {
-                    state.timerId = null;
-                    cycle();
-                }, 100);
+        const guard = createAbortGuard(() => cmd.abortEpoch);
+        setTimeout(() => {
+            if (!guard()) { cleanup(); cmd.releaseBusy(); return; }
+            cleanup();
+            remaining--;
+            if (remaining > 0) {
+                scheduleWithAbort(() => cmd.abortEpoch, cycle, 100);
             } else {
                 cmd.releaseBusy();
             }
@@ -77,13 +62,15 @@ export function borderFlash(cmd, term, count) {
 
 export function artSequence(cmd, term, artworks) {
     if (!artworks || artworks.length === 0) return;
-    const gen = cmd.abortEpoch;
     const queue = artworks.slice();
-    const state = { timerId: null, ov: null };
+    let ov = null;
+
+    function cleanup() {
+        if (ov) { term.removeOverlay(ov); term.markAllDirty(); ov = null; }
+    }
 
     function next() {
-        if (_isAborted(cmd, gen)) { _cleanup(term, state); return; }
-        if (queue.length === 0) { _cleanup(term, state); cmd.releaseBusy(); return; }
+        if (queue.length === 0) { cleanup(); cmd.releaseBusy(); return; }
 
         const mod = queue.shift();
         const { cols, pixels } = mod.default;
@@ -92,7 +79,7 @@ export function artSequence(cmd, term, artworks) {
         const ox = Math.floor((term.cols - cols) / 2);
         const oy = Math.floor((term.rows - cellRows) / 2);
 
-        state.ov = {
+        ov = {
             y: oy, x: ox, h: cellRows, w: cols,
             z: OverlayZ.FLASH,
             owner: null,
@@ -103,18 +90,15 @@ export function artSequence(cmd, term, artworks) {
                 return makeCell('▀', { ...defaultAttr(), fg, bg }, 1);
             },
         };
-        term.addOverlay(state.ov);
+        term.addOverlay(ov);
         term.markAllDirty();
 
-        state.timerId = setTimeout(() => {
-            state.timerId = null;
-            if (_isAborted(cmd, gen)) { _cleanup(term, state); return; }
-            _cleanup(term, state);
+        const guard = createAbortGuard(() => cmd.abortEpoch);
+        setTimeout(() => {
+            if (!guard()) { cleanup(); cmd.releaseBusy(); return; }
+            cleanup();
             if (queue.length > 0) {
-                state.timerId = setTimeout(() => {
-                    state.timerId = null;
-                    next();
-                }, 150);
+                scheduleWithAbort(() => cmd.abortEpoch, next, 150);
             } else {
                 cmd.releaseBusy();
             }

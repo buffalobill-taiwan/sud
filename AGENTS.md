@@ -163,6 +163,23 @@ the proxies internally. CmdBase subclass code imports `system` or `term` directl
 Files outside `CmdBase` (widgets, ShellCmd, static menu helpers) also import `system` or `term`
 directly from `'../system/sys.js'`.
 
+### System Helpers — `js/system/`
+
+Additional helper modules in `js/system/` reduce boilerplate for common command patterns.
+Import them directly from their source files as needed:
+
+| Helper | Source | API | Used by |
+|---|---|---|---|
+| **Abort-safe async** | `BusyAsyncHelper.js` | `createAbortGuard(getEpoch)` → guard func; `scheduleWithAbort(getEpoch, cb, ms)` → timeoutId; `createRAFGuard(getEpoch, loopFn, cleanup)` → `{start, stop}` | `sleep.js`, `flash.js` (via flash-helper) |
+| **Interactive flow** | `InteractiveCommandHelper.js` | `wrapInteractiveFlow(cmd, async flowFn, opts)` — wraps `cmd.open()`/`cmd.close()` automatically | `mbti.js` |
+| **Questionnaire scoring** | `QuestionnaireHelper.js` | `DimensionalAggregator({dimensions, scoringMap})` — `recordAnswer(dim, key)`, `getDominant(dim)`, `getFinalResult(dims)`, `getScores()` | `mbti.js` |
+| **RAF animation** | `RAFAnimationHelper.js` | `RAFAnimationManager(cmd, opts)` — `initOverlay(getCell)`, `start(updateFn, cleanup)`; `startBufferAnimation(cmd, getCell, updateFn, opts)` → manager | `anime.js` |
+
+**Usage rules:**
+- `BusyAsyncHelper` and `RAFAnimationHelper` take a `getAbortEpoch` / `cmd` parameter to support Ctrl+C abort. Always pass `() => cmd.abortEpoch` or `this` (the command instance).
+- `InteractiveCommandHelper.wrapInteractiveFlow` automatically manages the `open()`/`close()` lifecycle — the flow function can use `this.selectAsync()`, `this.readLineAsync()`, etc. without manual lifecycle calls.
+- `DimensionalAggregator` supports arbitrary answer keys per dimension (not just A/B pairs), configurable weights, and tie-breaking via random selection.
+
 ### Frame stack — persistent ShellFrame
 
 `SystemManager` owns the frame stack (`cmdStack`). A persistent `ShellFrame`
@@ -458,6 +475,7 @@ js/cmd/
 | `close()` | End interactive mode — sets `closed=true`, shows cursor, ticks frame stack |
 | `holdBusy()` | Hold busy flag (for async/busy-wait commands like flash, sleep) |
 | `releaseBusy()` | Release busy flag |
+| `parseArgs(args, opts?)` | Arg parser with `opts.flags` type declarations (`Boolean`/`Number`); returns `{hasHelp, rest, flag(long, short)}` |
 | `get abortGeneration()` | Monotonically increasing counter for Ctrl+C detection |
 | `get cmdList()` | `system.cmdList` — registered command list for help etc. |
 | `static get commandName()` | Command name string, e.g. `'cowsay'` |
@@ -669,6 +687,10 @@ draw() {
 - `LineEditor.js`: Line editing, history, tab completion; `_redraw()` uses `_cursorDisplayCol`/`_lastPromptRow` tracking + CUP for multi-row wrapped line support
 - `TextInputModel.js`: Low-level text input model (used by LineEditor + InputDialog)
 - `typewriter.js`: rAF-based animated command output
+- **`BusyAsyncHelper.js`**: Abort-safe setTimeout/RAF — `createAbortGuard`, `scheduleWithAbort`, `createRAFGuard`
+- **`InteractiveCommandHelper.js`**: `wrapInteractiveFlow(cmd, flowFn)` — auto `open()`/`close()` lifecycle
+- **`QuestionnaireHelper.js`**: `DimensionalAggregator` — multi-dimension scoring and result calculation
+- **`RAFAnimationHelper.js`**: `RAFAnimationManager` + `startBufferAnimation` — RAF loop with overlay compositing
 
 ### `js/util/` — Pure utilities (no DOM, no side-effects)
 
@@ -681,6 +703,7 @@ draw() {
 - `select-grid.js`: Grid navigation helpers (`defaultGridMove`, `displayWidth`) used by `CmdBase.select()`
 - `pixel-codec.js`: RLE + frame-diff pixel codec (`decodeRLE`, `applyDiff`, `computeRLE`, `computeDiff`)
 - `flash-helper.js`: Standalone buffer overlay flash utilities (`screenFlash`, `borderFlash`, `artSequence`) — reusable by any command, no `SystemManager` dependency
+- `random.js`: `shuffle`, `pickRandom`, `pickRandomN` — random array utilities
 
 ### `js/dialog/`
 
@@ -700,6 +723,152 @@ draw() {
 - `widgets/DVDWidget.js`: Bouncing DVD logo (7×3, 120ms interval)
 - `art.js` + `art/*.js`: Pixel-art renderer and static artwork data; exports `ARTWORKS` for reuse by `flash --art`
 - `anime.js`: 124-frame animation player (rAF + buffer overlay, pixel-codec)
+
+## Command Development Templates
+
+Use these templates as starting points for new commands. Register the command by adding its
+export to `js/cmd/index.js` (auto-registered by `SystemManager._registerCommands`).
+
+### Template A — Simple output command
+
+```js
+import { CmdBase } from './CmdBase.js';
+import { bold, yellow } from '../util/sgr.js';
+
+export class MyCmd extends CmdBase {
+    execute(args) {
+        const p = this.parseArgs(args, {
+            flags: { '--verbose': Boolean, '-v': Boolean },
+        });
+        if (p.hasHelp) return this.showHelp();
+        this.print(bold(yellow('Hello!')) + '\n');
+    }
+
+    static get commandName() { return 'mycmd'; }
+    static get help() { return 'Short description'; }
+    static get menu() { return null; }       // null = hide from menu dialog
+    static get usage() { return 'mycmd [--verbose]'; }
+}
+```
+
+### Template B — Async command (Promise-based, e.g. data loading)
+
+```js
+import { CmdBase } from './CmdBase.js';
+
+export class MyAsyncCmd extends CmdBase {
+    async execute(args) {
+        const data = await import('./data.js');
+        let out = '';
+        // ... build output string ...
+        this.print(out);
+    }
+
+    static get commandName() { return 'myasync'; }
+    static get help() { return 'Async command description'; }
+    static get menu() { return null; }
+}
+```
+
+### Template C — Interactive select command
+
+```js
+import { term } from '../system/sys.js';
+import { CmdBase } from './CmdBase.js';
+import { cyan, bold } from '../util/sgr.js';
+
+export class MyInteractiveCmd extends CmdBase {
+    execute(args) {
+        this.select({
+            text: bold(cyan('Pick one:')) + '\n',
+            options: [['Option A', 'Option B'], ['Option C']],
+            onPick: (row, col, value) => {
+                this.print('You picked: ' + value + '\n');
+                this.close();
+            },
+        });
+    }
+
+    static get commandName() { return 'mypick'; }
+    static get help() { return 'Interactive selection'; }
+    static get menu() { return 'Pick one'; }
+}
+```
+
+### Template D — Async interactive (Promise-based select, e.g. multi-step)
+
+```js
+import { term } from '../system/sys.js';
+import { CmdBase } from './CmdBase.js';
+import { wrapInteractiveFlow } from '../system/InteractiveCommandHelper.js';
+import { cyan, bold } from '../util/sgr.js';
+
+export class MyFlowCmd extends CmdBase {
+    async execute(args) {
+        await wrapInteractiveFlow(this, async (cmd) => {
+            const r1 = await cmd.selectAsync({
+                text: bold(cyan('First question:')) + '\n',
+                options: [['Yes', 'No']],
+            });
+            if (!r1) return;
+            const r2 = await cmd.selectAsync({
+                text: bold(cyan('Second question:')) + '\n',
+                options: [['Red', 'Blue', 'Green']],
+            });
+            if (!r2) return;
+            cmd.print(`You chose ${r1.value} then ${r2.value}\n`);
+        });
+    }
+
+    static get commandName() { return 'myflow'; }
+    static get help() { return 'Multi-step interactive flow'; }
+    static get menu() { return 'Multi-step'; }
+}
+```
+
+### Template E — Animation / overlay command
+
+```js
+import { term } from '../system/sys.js';
+import { CmdBase } from './CmdBase.js';
+import { startBufferAnimation } from '../system/RAFAnimationHelper.js';
+import { createEmptyBuffer, makeOverlayGetCell, makeCell, defaultAttr } from '../util/sgr.js';
+
+export class MyAnimCmd extends CmdBase {
+    async execute(args) {
+        const w = 20, h = 10;
+        const ox = Math.floor((term.cols - w) / 2);
+        const oy = Math.floor((term.rows - h) / 2);
+        const buffer = createEmptyBuffer(w, h);
+
+        // Initialize frame 0
+        for (let y = 0; y < h; y++)
+            for (let x = 0; x < w; x++)
+                buffer[y][x] = makeCell('.', defaultAttr(), 1);
+
+        const getCell = makeOverlayGetCell(() => buffer, w, h);
+        let frame = 0;
+
+        startBufferAnimation(this, getCell, (ts, frameIdx) => {
+            // Update buffer per frame
+            const ch = '⣀⣤⣶⣿'[frameIdx % 4];
+            for (let y = 0; y < h; y++)
+                for (let x = 0; x < w; x++)
+                    buffer[y][x] = makeCell(ch, { ...defaultAttr(), fg: frameIdx % 16 }, 1);
+            frame++;
+            term.markAllDirty();
+            if (frame >= 60) return true;  // stop after 60 frames
+        }, {
+            y: oy, x: ox, w, h,
+            frameDuration: 1000 / 30,  // 30fps
+        });
+    }
+
+    static get commandName() { return 'myanim'; }
+    static get help() { return 'Play an animation'; }
+    static get menu() { return 'Animation demo'; }
+}
+```
 
 ### Tools
 

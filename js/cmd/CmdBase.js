@@ -53,9 +53,10 @@ export class CmdBase {
         this.print(red('Error: ' + text) + '\n');
     }
 
-    parseArgs(args) {
+    parseArgs(args, opts = {}) {
         const result = { hasHelp: false, rest: [] };
         const flags = {};
+        const flagTypes = opts.flags || {};
         result.flag = (long, short) =>
             flags[long] !== undefined ? flags[long] :
             (flags[short] !== undefined ? flags[short] : null);
@@ -67,12 +68,20 @@ export class CmdBase {
             } else if (a.startsWith('--')) {
                 const eqIdx = a.indexOf('=');
                 if (eqIdx > 0) {
-                    flags[a.substring(0, eqIdx)] = a.substring(eqIdx + 1);
+                    const name = a.substring(0, eqIdx);
+                    const val = a.substring(eqIdx + 1);
+                    flags[name] = flagTypes[name] === Number ? Number(val) : val;
+                } else if (flagTypes[a] === Boolean) {
+                    flags[a] = true;
                 } else {
                     flags[a] = (i + 1 < args.length && !args[i + 1].startsWith('-')) ? args[++i] : true;
                 }
             } else if (a.startsWith('-') && a.length === 2) {
-                flags[a] = (i + 1 < args.length && !args[i + 1].startsWith('-')) ? args[++i] : true;
+                if (flagTypes[a] === Boolean) {
+                    flags[a] = true;
+                } else {
+                    flags[a] = (i + 1 < args.length && !args[i + 1].startsWith('-')) ? args[++i] : true;
+                }
             } else {
                 result.rest.push(a);
             }
