@@ -6,6 +6,7 @@
  */
 import { TextInputModel, parseCSI } from './TextInputModel.js';
 import { isWide } from '../util/unicode-width.js';
+import { system } from './sys.js';
 
 export class LineEditor {
     constructor(term, callbacks = {}) {
@@ -27,7 +28,11 @@ export class LineEditor {
     }
 
     setCommands(names) { this._commands = names; }
-    setPrompt(text)    { this._prompt = text; }
+    setPrompt(text) {
+        this._prompt = text;
+        this._cursorDisplayCol = text.length;
+        this._lastTotalWidth   = text.length;
+    }
 
     get line() { return this._model.value; }
 
@@ -56,7 +61,7 @@ export class LineEditor {
         const startY = this.term.curY;
 
         this.term.write(this._prompt + this._model.value);
-        this.term.write('\x1B[J');
+        this.term.write('\x1B[K');
 
         this._lastPromptRow = startY;
         this._lastTotalWidth = totalWidth;
@@ -123,7 +128,12 @@ export class LineEditor {
             if (code === 0x03) {                          // Ctrl+C
                 this.term.write('^C\n');
                 this._model.reset();
-                this._onShowPrompt();
+                if (!system.ctrlCAbortEnabled) {
+                    // Abort disabled: just redraw and stay in input
+                    this._redraw();
+                } else {
+                    this._onShowPrompt();
+                }
                 consumed = true; i++; continue;
             }
             if (code === 0x04) {                          // Ctrl+D

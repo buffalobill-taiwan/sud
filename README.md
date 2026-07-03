@@ -1,12 +1,10 @@
-# HTMLTerm
+# HTMLTerm + SUD (Single User Dungeon)
 
 [![Live Demo](https://img.shields.io/badge/demo-online-44cc11?style=flat-square)](https://buffalobill-taiwan.github.io/htmlterm/)
 
-A pure HTML+CSS+JS 80×25 terminal emulator inspired by [term.ptt.cc](https://term.ptt.cc/).
-
-Renders entirely via DOM `<span>` elements with CSS color classes — no Canvas.
-Includes a demo shell with animated command output, interactive commands, draggable
-dialogs, and TSR-style widgets.
+A pure HTML+CSS+JS 80×25 terminal emulator running **SUD** (Single User Dungeon),
+a single-player MUD-style dungeon game. Renders entirely via DOM `<span>` elements
+with CSS color classes — no Canvas.
 
 ## Features
 
@@ -15,45 +13,38 @@ dialogs, and TSR-style widgets.
 - Full ANSI escape sequence support (SGR colors, cursor positioning, scroll regions, etc.)
 - 16-color ANSI palette with bold brightening
 - 256-color and truecolor support
-- Mouse tracking (normal, button-events, any-event, SGR 1006)
-- Scrollback buffer (2000 lines) with mouse wheel navigation
-- IME support for Chinese/Japanese input via hidden textarea
 - CJK double-width character handling (buffer + rendering + input/delete)
-- `\n` treated as CR+LF for proper newline behavior
-- Viewport auto-scaling (maintains 80×25 aspect ratio, adjustable on resize)
-- Bracketed paste mode
-- Cursor blink animation
-- CRT scanline overlay
+- Viewport auto-scaling (maintains 80×25 aspect ratio)
+- Scrollback buffer (2000 lines)
+- rAF-based Typewriter animation for game text output
 
-### Demo shell
+### SUD Game
 
-- Frame-stack command runner with rAF-based Typewriter output
-- 19 built-in commands (games, widgets, interactive tests — see below)
-- Dialog framework (`MenuDialog`, `InputDialog`, `ShowDialog`) with overlay compositing
-- TSR widgets (clock, DVD logo) — draggable, position remembered
-- Tab completion for command names; command history (Up/Down)
-- Long multi-line input support with proper wrapping, backspace, and cursor navigation
-- `Ctrl+C` aborts running commands, typewriter animation, `sleep`, and `flash`
+- **Title screen** — SUD ASCII art with New Game / Load Save
+- **10+ rooms** — dungeon, sanctuary, prison, treasure vault, etc.
+- **Combat** — turn-based with `attack`, `run`, `use <item>`; HP bars, critical hits, leveling
+- **Monsters** — rat, goblin, skeleton, dark knight (boss)
+- **NPCs** — talk to NPCs with branching dialogue; free the prisoner subquest
+- **Items** — potions, torches, silver key, weapons, shields; inventory management
+- **ID system** — entities shown as `Name[ID]` (e.g. `老人[OldMan]`, `火把[Torch]`);
+  targeting via display ID (case-insensitive, e.g. `OldMan`, `old_man`, `Torch`)
+- **Equipment** — equip weapons and shields for stat bonuses
+- **Save/Load** — persistent via `localStorage`
+- **Full CJK support** — play in Chinese or English
 
 ## Architecture
 
-> **Note on 256-color CSS classes:** The 480 `.q16`–`.q255`/`.b16`–`.b255` CSS rules in `style.css` are hand-maintained and intentionally kept static. Per-cell rendering in `Renderer.js` uses these classes for indexed colors and inline styles for truecolor. This avoids generating 80×25 inline style strings per frame and keeps the render hot path simple.
-
 | Component | Approach |
 |-----------|----------|
-| **Core split** | `Screen.js` (buffer) · `Parser.js` (VT100 state machine) · `Renderer.js` (DOM grid) · `terminal.js` (coordinator) |
-| **Rendering** | Pre-created 80×25 `<span>` grid; dirty-row updates via `.textContent` / `.className` / `.style.cssText` |
-| **Buffer** | 2D cell array (`{ch, fg, bg, bold, italic, …, width}`) + scrollback; CJK uses `width: 2` + continuation cell |
-| **Overlays** | Widgets (z=10), dialogs (z=100), and flash (z=200) own separate buffers; `Renderer._blendOverlays` composites at render time |
-| **Shell** | `SystemManager` (singleton) + `sys.js` (Proxy exports for cmd code) + `ShellCmd` (persistent CmdBase subclass, REPL) |
-| **Dialogs** | Buffer-based rendering in `js/dialog/`; `DialogFrame` saves/restores cursor on open/close |
-| **Input** | `keydown` on `document` (always captured) + hidden `<textarea>` for IME |
-| **Focus** | Automatic refocus on `keyup` (ptt.cc pattern) |
+| **Core split** | `Screen.js` (buffer) · `Parser.js` (VT100) · `Renderer.js` (DOM grid) · `terminal.js` (coordinator) |
+| **Rendering** | Pre-created 80×25 `<span>` grid; dirty-row updates |
+| **Overlays** | Widgets (z=10), dialogs (z=100) own separate buffers; composited at render time |
+| **Shell** | `SystemManager` + `sys.js` (Proxy exports) + `SyncCmdFrame(SudCmd)` |
+| **Input** | `keydown` on `document` + hidden `<textarea>` for IME |
 | **Cursor** | Absolutely-positioned `<div>` with CSS `blink` animation |
-| **Render loop** | `requestAnimationFrame` with dirty-row tracking |
-| **Scaling** | `fitToViewport()` on init and debounced resize |
+| **Output** | rAF Typewriter for animated text; `term.write()` for synchronous output |
 
-See [AGENTS.md](AGENTS.md) for detailed architecture, command authoring rules, and overlay lifecycle.
+See [AGENTS.md](AGENTS.md) for detailed architecture, frame stack lifecycle, and game system docs.
 
 ## Fonts
 
@@ -71,60 +62,46 @@ Open `index.html` in a modern browser, or visit the live demo:
 
 <https://buffalobill-taiwan.github.io/htmlterm/>
 
-### Commands
+### Game Commands
 
 | Command | Description |
 |---------|-------------|
-| `anime` | Play 124-frame animation (30fps, Ctrl+C to stop) |
-| `art` | Render pixel art from a random artwork |
-| `ascii` | Show ANSI color chart (16-color + 256-color cube) |
-| `astrology` | Today's horoscope for your zodiac sign |
-| `5willow` | Print 五柳先生傳 (with `--big` for enlarged text) |
-| `calc` | Evaluate arithmetic expression |
-| `clear` | Clear screen |
-| `clock` | Toggle TSR clock widget |
-| `cowsay` | Let a cow speak |
-| `date` | Show current date/time |
-| `dvd` | Toggle bouncing DVD logo widget |
-| `echo` | Print arguments |
-| `flash` | Flash the screen N times (default 1). `--border` for border flash, `--art` for random artwork flash |
-| `help` | List available commands |
-| `menu` | Open command menu dialog |
-| `mbti` | MBTI personality test (interactive) |
-| `quiz` | Math quiz challenge |
-| `sleep` | Wait for N seconds (default 1) |
-| `time` | Measure execution time of a command |
+| `n` / `s` / `e` / `w` / `u` / `d` | Move (north/south/east/west/up/down) |
+| `look` / `l` | Look around the current room |
+| `attack` / `kill` | Start or continue combat |
+| `talk` / `say` | Talk to an NPC (e.g. `talk OldMan`) |
+| `take` / `get` | Pick up an item (e.g. `take Torch`) |
+| `drop` | Drop an item |
+| `use` | Use an item (e.g. `use HealthPotion`) |
+| `inventory` / `i` | Show inventory |
+| `equip` / `un` | Equip / unequip items |
+| `status` / `st` | Show player status (HP, MP, level, equipment) |
+| `save` | Save game |
+| `quit` | Return to title screen |
+| `help` / `h` | Show help |
 
-### Keyboard shortcuts
+### Keyboard
 
-| Shortcut | Action |
-|----------|--------|
-| `Ctrl+Shift++` / `Ctrl+Shift+=` | Scroll toward present |
-| `Ctrl+-` | Scroll back through history |
-| Mouse wheel | Scroll scrollback (3 lines per tick) |
-| `Tab` | Command name completion |
-| `Up` / `Down` | Command history |
-| `Home` / `End` | Jump to start/end of input line |
-| `Ctrl+A` / `Ctrl+E` | Jump to start/end of input line |
-| `Ctrl+U` / `Ctrl+K` | Delete to start/end of input line |
-| `Ctrl+W` | Delete word before cursor |
-| `Ctrl+C` | Cancel input, abort command/typewriter |
-| `Ctrl+D` | EOF on empty line |
-| `Ctrl+L` | Clear screen and redraw prompt |
+| Key | Action |
+|-----|--------|
+| Type commands | Input game actions |
+| `Enter` | Execute command |
+| `Backspace` | Delete character |
+| `Ctrl+C` | Clear current input (in-game; does not abort) |
 
 ## Project layout
 
 ```
 js/
 ├── main.js
-├── terminal/    Screen.js Parser.js Renderer.js terminal.js   # VT100 core
-├── system/      sys.js system.js CmdFrame.js LineEditor.js typewriter.js TextInputModel.js
-├── util/        constants.js sgr.js unicode-width.js drag.js tokenize.js calc-expr.js select-grid.js
-├── dialog/                                        # Dialog framework
-└── cmd/                                           # Demo commands + widgets
+├── terminal/          Screen.js Parser.js Renderer.js terminal.js   # VT100 core
+├── system/            sys.js system.js CmdFrame.js LineEditor.js    # Shell system
+├── util/              sgr.js unicode-width.js constants.js           # Utilities
+├── sud/               SUD game files (see AGENTS.md)
+├── cmd/               SudCmd.js only (registered via index.js)
+├── dialog/            Dialog framework
 css/style.css
 index.html
-tools/png2art.js                                   # Offline art converter
 ```
 
 ## License

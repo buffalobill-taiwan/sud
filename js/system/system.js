@@ -1,10 +1,9 @@
 import { Typewriter } from './typewriter.js';
 import { LineEditor } from './LineEditor.js';
 import { tokenize } from '../util/tokenize.js';
-import { ShellCmd } from '../cmd/ShellCmd.js';
-import { ShellFrame, SyncCmdFrame, DialogFrame } from './CmdFrame.js';
+import { SyncCmdFrame, DialogFrame } from './CmdFrame.js';
 import { system } from './sys.js';
-import { bold, green, yellow, gray, warn } from '../util/sgr.js';
+import { warn } from '../util/sgr.js';
 import { MenuDialog } from '../dialog/MenuDialog.js';
 
 export class SystemManager {
@@ -40,6 +39,7 @@ export class SystemManager {
         this._cmdInstances = {};
         this.prompt = '$ ';
         this.running = false;
+        this.ctrlCAbortEnabled = true;
 
         this.dialogRestoreHooks = [];
         this._dialogPositions = {};
@@ -74,10 +74,12 @@ export class SystemManager {
     start() {
         this.running = true;
         this.term.write('\x1B[2J\x1B[H');
-        this.term.write(bold(green('HTML Term')) + '\n');
-        this.term.write('Type ' + yellow('help') + ' for available commands.\n\n');
-        this.term.write(gray('AEIOUÀÈÌÒÙ金木水火土鑫森淼焱垚あいうえおアイウエオ✂✓✕✨❄') + '\n\n');
-        this._pushFrame(new ShellFrame(new ShellCmd()));
+        const sudCmd = this._cmdInstances['sud'];
+        if (sudCmd) {
+            this._pushFrame(new SyncCmdFrame('sud', [], sudCmd));
+        } else {
+            this.term.write('SUD not found.\n');
+        }
         this.tick();
     }
 
@@ -175,7 +177,7 @@ export class SystemManager {
         this.execCmd(line);
     }
 
-    readLine(callback) {
+    readLine(callback, prompt = '') {
         if (this.readLineState) {
             warn('readLine called while another readLine is pending — overwriting');
         }
@@ -186,14 +188,18 @@ export class SystemManager {
                 this.tick();
             },
             onShowPrompt: () => {
-                // Ctrl+C / Ctrl+D inside readLine — cancel
+                // Ctrl+C / Ctrl+D inside readLine
                 this.readLineState = null;
-                const top = this.cmdStack[this.cmdStack.length - 1];
-                if (top && top.persistent) top._pendingActivate = true;
+                if (!this.ctrlCAbortEnabled) {
+                    callback(null);
+                } else {
+                    const top = this.cmdStack[this.cmdStack.length - 1];
+                    if (top && top.persistent) top._pendingActivate = true;
+                }
                 this.tick();
             },
         });
-        editor.setPrompt('');
+        editor.setPrompt(prompt);
         this.readLineState = { editor };
     }
 
@@ -214,6 +220,11 @@ export class SystemManager {
     }
 
     _checkCtrlC(data) {
+        if (!this.ctrlCAbortEnabled) {
+            // Ctrl+C disabled — queue input for processing later
+            this._queuedInput.push(data);
+            return;
+        }
         for (let i = 0; i < data.length; i++) {
             const ch = data[i];
             const code = ch.charCodeAt ? ch.charCodeAt(0) : ch;
