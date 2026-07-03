@@ -1,6 +1,6 @@
 # HTMLTerm + SUD (Single User Dungeon)
 
-[![Live Demo](https://img.shields.io/badge/demo-online-44cc11?style=flat-square)](https://buffalobill-taiwan.github.io/htmlterm/)
+[![Live Demo](https://img.shields.io/badge/demo-online-44cc11?style=flat-square)](https://buffalobill-taiwan.github.io/sud/)
 
 A pure HTML+CSS+JS 80×25 terminal emulator running **SUD** (Single User Dungeon),
 a single-player MUD-style dungeon game. Renders entirely via DOM `<span>` elements
@@ -60,7 +60,7 @@ Uses [Unifont](https://unifoundry.com/unifont/) bitmap font, subsetted into five
 
 Open `index.html` in a modern browser, or visit the live demo:
 
-<https://buffalobill-taiwan.github.io/htmlterm/>
+<https://buffalobill-taiwan.github.io/sud/>
 
 ### Game Commands
 
