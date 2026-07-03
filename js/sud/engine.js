@@ -89,9 +89,10 @@ export class Engine {
             cmd.print('那裡沒有出口。\n');
             return;
         }
-        // Check lock
-        if (room.locked) {
-            if (this.player.hasItem(room.locked + '_key') || this.player.flags['unlocked_' + room.id]) {
+        // Check lock on target room
+        const nextRoom = this.world.getRoom(nextRoomId);
+        if (nextRoom && nextRoom.locked) {
+            if (this.player.hasItem(nextRoom.locked + '_key') || this.player.flags['unlocked_' + nextRoom.id]) {
                 // already unlocked
             } else {
                 cmd.print(`門是鎖著的。你需要一把鑰匙來打開它。\n`);
@@ -353,10 +354,22 @@ export class Engine {
             cmd.print(`你使用了 ${bold(nameWithId(item))}，恢復了 ${bold(cyan(String(restored)))} 點魔力。\n`);
         } else if (item.use === 'key') {
             const room = this.world.getRoom(this.player.currentRoom);
-            if (room.locked === item.keyId) {
+            let unlocked = false;
+            for (const nextId of Object.values(room.exits)) {
+                const next = this.world.getRoom(nextId);
+                if (next && next.locked === item.keyId && !this.player.flags['unlocked_' + next.id]) {
+                    cmd.print(`你用 ${bold(nameWithId(item))} 打開了通往 ${next.name} 的鎖！\n`);
+                    this.player.flags['unlocked_' + next.id] = true;
+                    unlocked = true;
+                    break;
+                }
+            }
+            if (!unlocked && room.locked === item.keyId) {
                 cmd.print(`你用 ${bold(nameWithId(item))} 打開了鎖！\n`);
                 this.player.flags['unlocked_' + room.id] = true;
-            } else {
+                unlocked = true;
+            }
+            if (!unlocked) {
                 cmd.print('這裡沒有可以用這把鑰匙打開的鎖。\n');
             }
         } else if (item.use === 'light') {
