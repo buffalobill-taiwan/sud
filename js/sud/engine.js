@@ -264,24 +264,24 @@ export class Engine {
         } else if (!this.player.flags[flagKey] && npc.dialogue.first) {
             cmd.print(`${bold(nameWithId(npc))}說：「${npc.dialogue.first}」\n`);
             this.player.flags[flagKey] = true;
-            // Prisoner special case
-            if (npc.id === 'prisoner') {
-                const key = this.player.inventory.find(i => i.id === 'silver_key');
-                if (key) {
-                    cmd.print(`${bold(nameWithId(npc))}「你找到銀鑰匙了！快幫我打開柵欄！」\n`);
-                    const open = await cmd.confirm('要打開柵欄嗎？');
-                    if (open) {
-                        this.player.removeItem('silver_key');
-                        this.player.flags[freedKey] = true;
-                        cmd.print(`${bold(nameWithId(npc))}「謝謝你！我自由了！」\n`);
-                        cmd.print('囚犯快步離開了地牢。\n');
-                        room.npcIds = room.npcIds.filter(id => id !== 'prisoner');
-                        room._npcs = null;
-                    }
-                }
-            }
         } else if (npc.dialogue.default) {
             cmd.print(`${bold(nameWithId(npc))}說：「${npc.dialogue.default}」\n`);
+        }
+        // Prisoner release — offered whenever player has the key and prisoner is still here
+        if (npc.id === 'prisoner' && !this.player.flags[freedKey]) {
+            const key = this.player.inventory.find(i => i.id === 'silver_key');
+            if (key) {
+                cmd.print(`${bold(nameWithId(npc))}「你找到銀鑰匙了！快幫我打開柵欄！」\n`);
+                const open = await cmd.confirm('要打開柵欄嗎？');
+                if (open) {
+                    this.player.removeItem('silver_key');
+                    this.player.flags[freedKey] = true;
+                    cmd.print(`${bold(nameWithId(npc))}「謝謝你！我自由了！」\n`);
+                    cmd.print('囚犯快步離開了地牢。\n');
+                    room.npcIds = room.npcIds.filter(id => id !== 'prisoner');
+                    room._npcs = null;
+                }
+            }
         }
     }
 
