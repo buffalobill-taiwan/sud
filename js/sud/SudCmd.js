@@ -61,7 +61,7 @@ export class SudCmd extends CmdBase {
         const hasSave = typeof localStorage !== 'undefined' && localStorage.getItem('sud_save');
         let options;
         if (hasSave) {
-            options = [['進行新遊戲', '載入存檔']];
+            options = [['進行新遊戲'], ['載入存檔']];
         } else {
             options = [['進行新遊戲']];
         }
@@ -87,7 +87,7 @@ export class SudCmd extends CmdBase {
         this.close();
         if (!choice) return;
 
-        if (choice.value === '進行新遊戲' || choice.col === 0) {
+        if (choice.row === 0) {
             await this._newGame();
         } else {
             await this._loadGame();
