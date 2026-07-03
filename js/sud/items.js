@@ -61,6 +61,7 @@ export const ITEMS = {
         desc: '一枚雕刻著古老符文的玉質護符，散發溫暖的能量。',
         takeable: true,
         use: 'quest',
+        unique: true,
     },
     gold_coins: {
         name: '金幣',

@@ -1,7 +1,8 @@
-import { World } from './world.js';
+import { World, ROOMS } from './world.js';
 import { getItem } from './items.js';
 import { Combat } from './combat.js';
 import { bold, red, green, yellow, cyan, gray } from '../util/sgr.js';
+import { isWide } from '../util/unicode-width.js';
 import { system } from '../system/sys.js';
 import { nameWithId, matchTarget } from './display.js';
 
@@ -166,6 +167,10 @@ export class Engine {
         cmd.print(bold(yellow(`【${room.name}】`)) + '\n');
         cmd.print(room.desc + '\n');
 
+        if (room.id === 'temple' && this.player.inventory.some(i => i.id === 'ancient_amulet')) {
+            cmd.print(yellow('上古護符發出了微微光芒...\n'));
+        }
+
         if (room.items.length > 0) {
             const itemNames = room.items.map(i => yellow(nameWithId(i))).join('  ');
             cmd.print(`\n這裡有：${itemNames}\n`);
@@ -273,9 +278,21 @@ export class Engine {
         const defeatedId = this.combat ? this.combat.monster.id : null;
         if (defeatedId) {
             this.player.flags['killed_' + defeatedId] = true;
-            // Also mark on room data
             room.monsterIds = room.monsterIds.filter(id => id !== defeatedId);
             room._monsters = null;
+        }
+        // Drop loot
+        const monster = this.combat ? this.combat.monster : null;
+        if (monster && monster.loot && monster.loot.length > 0) {
+            for (const lootId of monster.loot) {
+                const item = getItem(lootId);
+                if (!item) continue;
+                if (item.unique) {
+                    const alreadyHas = this.player.inventory.some(i => i.id === lootId);
+                    if (alreadyHas) continue;
+                }
+                room.itemIds.push(lootId);
+            }
         }
     }
 
@@ -315,6 +332,7 @@ export class Engine {
                 if (open) {
                     this.player.removeItem('silver_key');
                     this.player.flags[freedKey] = true;
+                    this.player.flags['unlocked_dungeon_cell'] = true;
                     cmd.print(`${bold(nameWithId(npc))}「謝謝你！我自由了！」\n`);
                     cmd.print('囚犯快步離開了地牢。\n');
                     room.npcIds = room.npcIds.filter(id => id !== 'prisoner');
@@ -415,9 +433,26 @@ export class Engine {
             const room = this.world.getRoom(this.player.currentRoom);
             cmd.print(`你點燃了 ${bold(nameWithId(item))}，火光驅散了周圍的黑暗。\n`);
             this.player.flags['lit_' + room.id] = true;
-        } else if (item.use === 'quest') {
-            cmd.print(`${bold(nameWithId(item))} 散發出溫暖的光芒，\
+        } else if (item.id === 'ancient_amulet') {
+            const room = this.world.getRoom(this.player.currentRoom);
+            if (room.id === 'temple') {
+                cmd.print(bold(yellow('你高舉上古護符，耀眼的光芒瞬間充滿了整座神殿！\n')));
+                cmd.print(bold(red('一陣低沉的笑聲從地底傳來...所有被你擊敗的怪物復活了！\n\n')));
+                for (const [id, data] of Object.entries(ROOMS)) {
+                    const r = this.world.getRoom(id);
+                    if (r) {
+                        r.monsterIds = [...data.monsters];
+                        r._monsters = null;
+                    }
+                }
+                this.player.flags = Object.fromEntries(
+                    Object.entries(this.player.flags).filter(([k]) => !k.startsWith('killed_'))
+                );
+                cmd.print(red('四周的陰影中傳來了熟悉的低吼聲...\n'));
+            } else {
+                cmd.print(`${bold(nameWithId(item))} 散發出溫暖的光芒，\
 你感到一股古老的力量流遍全身。也許這東西在別的地方還有用處。\n`);
+            }
         } else {
             cmd.print(`你不知道該如何使用 ${bold(nameWithId(item))}。\n`);
         }
@@ -489,9 +524,25 @@ export class Engine {
     }
 
     async _doHelp(cmd) {
-        cmd.print(bold('╔══════════════════════════════════════╗\n'));
-        cmd.print(bold('║          SUD 指令列表               ║\n'));
-        cmd.print(bold('╚══════════════════════════════════════╝\n'));
+        const strWidth = (s) => {
+            let w = 0;
+            for (const ch of s) w += isWide(ch) ? 2 : 1;
+            return w;
+        };
+        const padCenter = (content, width) => {
+            const cw = strWidth(content);
+            const pad = width - cw;
+            const left = Math.floor(pad / 2);
+            const right = pad - left;
+            return ' '.repeat(left) + content + ' '.repeat(right);
+        };
+
+        const BOX_W = 40;
+        const title = 'SUD 指令列表';
+        const innerW = BOX_W - 2;
+        cmd.print(bold('╔' + '═'.repeat(innerW) + '╗\n'));
+        cmd.print(bold('║' + padCenter(title, innerW) + '║\n'));
+        cmd.print(bold('╚' + '═'.repeat(innerW) + '╝\n'));
         const commands = [
             ['n / s / e / w', '往指定方向移動'],
             ['look / l', '觀察周圍'],
