@@ -278,6 +278,7 @@ export class CmdBase {
             });
             return result ? result.col === 0 : false;
         } finally {
+            term.write('\n');
             this.close();
         }
     }
