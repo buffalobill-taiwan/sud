@@ -58,7 +58,7 @@ export const ROOMS = {
 不過在角落裡似乎還有一些堪用的裝備。',
         exits: { w: 'dark_corridor' },
         npcs: [],
-        items: ['iron_sword', 'iron_shield'],
+        items: ['iron_shield'],
         monsters: ['skeleton'],
         dark: false,
     },

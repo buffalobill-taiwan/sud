@@ -188,8 +188,8 @@ export class Engine {
         cmd.print(bold('背包中的物品：') + '\n');
         for (const item of p.inventory) {
             let note = '';
-            if (p.equipped.weapon && p.equipped.weapon.id === item.id) note = ' （已裝備）';
-            else if (p.equipped.shield && p.equipped.shield.id === item.id) note = ' （已裝備）';
+            if (p.equipped.weapon === item) note = ' （已裝備）';
+            else if (p.equipped.shield === item) note = ' （已裝備）';
             cmd.print(`  ${yellow(nameWithId(item))}${note}\n`);
         }
     }
