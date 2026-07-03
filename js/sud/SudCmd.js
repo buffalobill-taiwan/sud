@@ -71,16 +71,16 @@ export class SudCmd extends CmdBase {
             options,
             render: (selRow, selCol, opts, t) => {
                 for (let r = 0; r < opts.length; r++) {
+                    if (r > 0) t.write('\n');
                     let line = '';
                     if (r === selRow) {
                         line += bold(green('→ ')) + bold(green(opts[r][selCol]));
                     } else {
                         line += '  ' + gray(opts[r][selCol]);
                     }
-                    if (r < opts.length - 1) line += '\n';
-                    t.write('\r\x1B[K' + line + '\n');
+                    t.write('\r\x1B[K' + line);
                 }
-                t.write('\x1B[' + opts.length + 'A');
+                t.write('\x1B[' + (opts.length - 1) + 'A');
             },
         });
 
