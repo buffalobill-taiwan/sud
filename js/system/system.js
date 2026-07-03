@@ -184,6 +184,8 @@ export class SystemManager {
         const editor = new LineEditor(this.term, {
             onExecute: (line) => {
                 this.readLineState = null;
+                this.editor.history.push(line.trim());
+                if (this.editor.history.length > 100) this.editor.history.shift();
                 callback(line.trim());
                 this.tick();
             },
@@ -200,6 +202,8 @@ export class SystemManager {
             },
         });
         editor.setPrompt(prompt);
+        // Share history with the shell's persistent editor
+        editor.history = this.editor.history;
         this.readLineState = { editor };
     }
 
