@@ -28,6 +28,7 @@ export class LineEditor {
     }
 
     setCommands(names) { this._commands = names; }
+    setTabCompleter(fn) { this._tabCompleter = fn; }
     setPrompt(text) {
         this._prompt = text;
         this._cursorDisplayCol = text.length;
@@ -100,10 +101,32 @@ export class LineEditor {
     // ── Tab completion ────────────────────────────────────────────────────────
 
     _handleTab() {
-        const prefix  = this._model.value;
-        const matches = this._commands.filter(c => c.startsWith(prefix));
-        if (matches.length === 0) return;
+        const fullInput = this._model.value;
+        const cursor = this._model.cursor;
+        const before = fullInput.slice(0, cursor);
+        const spaceIdx = before.lastIndexOf(' ');
+        const currentWord = spaceIdx >= 0 ? before.slice(spaceIdx + 1) : before;
+        const wordIndex = spaceIdx >= 0 ? before.slice(0, spaceIdx).split(/\s+/).length : 0;
 
+        // Try custom completer first
+        if (this._tabCompleter) {
+            const allWords = fullInput.split(/\s+/);
+            const completions = this._tabCompleter(currentWord, wordIndex, allWords);
+            if (completions && completions.length > 0) {
+                this._applyCompletion(currentWord, completions);
+                return;
+            }
+        }
+
+        // Default: command completion for first word
+        if (wordIndex === 0) {
+            const matches = this._commands.filter(c => c.startsWith(currentWord));
+            this._applyCompletion(currentWord, matches);
+        }
+    }
+
+    _applyCompletion(prefix, matches) {
+        if (matches.length === 0) return;
         const common = _commonPrefix(matches);
         if (common.length > prefix.length) {
             const rest = common.slice(prefix.length);

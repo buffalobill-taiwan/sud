@@ -146,6 +146,15 @@ export class Player {
         p.expToNext = data.expToNext;
         p.inventory = data.inventory || [];
         p.equipped = data.equipped || { weapon: null, shield: null };
+        // Re-link equipped references to inventory objects (so === checks work)
+        if (p.equipped.weapon) {
+            const found = p.inventory.find(i => i.id === p.equipped.weapon.id);
+            if (found) p.equipped.weapon = found;
+        }
+        if (p.equipped.shield) {
+            const found = p.inventory.find(i => i.id === p.equipped.shield.id);
+            if (found) p.equipped.shield = found;
+        }
         p.currentRoom = data.currentRoom;
         p.flags = data.flags || {};
         return p;

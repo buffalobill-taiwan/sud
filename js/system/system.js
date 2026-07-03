@@ -177,7 +177,7 @@ export class SystemManager {
         this.execCmd(line);
     }
 
-    readLine(callback, prompt = '') {
+    readLine(callback, prompt = '', tabCompleter) {
         if (this.readLineState) {
             warn('readLine called while another readLine is pending — overwriting');
         }
@@ -204,6 +204,7 @@ export class SystemManager {
         editor.setPrompt(prompt);
         // Share history with the shell's persistent editor
         editor.history = this.editor.history;
+        if (tabCompleter) editor.setTabCompleter(tabCompleter);
         this.readLineState = { editor };
     }
 

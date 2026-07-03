@@ -92,7 +92,7 @@ export const ROOMS = {
         desc: '一座莊嚴肅穆的神殿。五彩的玻璃窗投射出斑斕的光芒，\
 祭壇上擺放著一個閃閃發光的聖杯。\
 空氣中充滿了安詳的氣息。',
-        exits: { s: 'library', n: 'treasure_vault' },
+        exits: { s: 'library', n: 'boss_chamber' },
         npcs: [],
         items: ['health_potion', 'mana_potion'],
         monsters: [],
@@ -104,20 +104,22 @@ export const ROOMS = {
         name: '寶藏庫',
         desc: '一間寬敞的石室，中央堆積著成山的金幣和珠寶。\
 牆壁上鑲嵌著發光的寶石，照亮了整個房間。\
-北方的巨大石門後似乎就是地城的最深處。',
-        exits: { s: 'temple', n: 'boss_chamber' },
+這就是地城的最深處，所有寶藏都聚集在這裡。',
+        exits: { s: 'boss_chamber' },
         npcs: [],
         items: ['gold_coins', 'health_potion', 'mana_potion'],
         monsters: [],
         dark: false,
+        requireFlag: 'killed_dark_knight',
     },
     boss_chamber: {
         id: 'boss_chamber',
         name: '黑暗王座',
         desc: '一個巨大的圓形廳堂，中央矗立著一座黑曜石王座。\
 牆壁上刻滿了古老的戰鬥壁畫。\
-空氣中充滿了壓迫感，讓你不寒而慄。',
-        exits: { s: 'treasure_vault' },
+空氣中充滿了壓迫感，讓你不寒而慄。\
+北方的通道通往更深處的寶藏庫。',
+        exits: { s: 'temple', n: 'treasure_vault' },
         npcs: [],
         items: [],
         monsters: ['dark_knight'],
@@ -137,6 +139,7 @@ export class Room {
         this.monsterIds = data.monsters || [];
         this.dark = data.dark || false;
         this.locked = data.locked || null;
+        this.requireFlag = data.requireFlag || null;
         this.heal = data.heal || false;
         this.boss = data.boss || false;
         this._npcs = null;

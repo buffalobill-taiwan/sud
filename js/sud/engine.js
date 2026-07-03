@@ -99,6 +99,10 @@ export class Engine {
                 return;
             }
         }
+        if (nextRoom && nextRoom.requireFlag && !this.player.flags[nextRoom.requireFlag]) {
+            cmd.print('一股強大的黑暗力量阻擋了你前進。\n');
+            return;
+        }
         this.player.currentRoom = nextRoomId;
         await this._lookRoom(cmd);
     }
@@ -185,12 +189,47 @@ export class Engine {
             cmd.print('你的背包是空的。\n');
             return;
         }
-        cmd.print(bold('背包中的物品：') + '\n');
+
+        // Categorize: equipped → equippable → other
+        const equipped = [];
+        const equippable = [];
+        const other = [];
+
         for (const item of p.inventory) {
-            let note = '';
-            if (p.equipped.weapon === item) note = ' （已裝備）';
-            else if (p.equipped.shield === item) note = ' （已裝備）';
-            cmd.print(`  ${yellow(nameWithId(item))}${note}\n`);
+            if (p.equipped.weapon === item || p.equipped.shield === item) {
+                equipped.push(item);
+            } else if (item.equip) {
+                equippable.push(item);
+            } else {
+                other.push(item);
+            }
+        }
+
+        // Group other items by ID and count
+        const grouped = new Map();
+        for (const item of other) {
+            const arr = grouped.get(item.id) || [];
+            arr.push(item);
+            grouped.set(item.id, arr);
+        }
+
+        cmd.print(bold('背包中的物品：') + '\n');
+
+        for (const item of equipped) {
+            cmd.print(`  ${yellow(nameWithId(item))} （已裝備）\n`);
+        }
+
+        for (const item of equippable) {
+            cmd.print(`  ${yellow(nameWithId(item))}\n`);
+        }
+
+        for (const [, items] of grouped) {
+            const item = items[0];
+            if (items.length > 1) {
+                cmd.print(`  ${yellow(nameWithId(item))} × ${items.length}\n`);
+            } else {
+                cmd.print(`  ${yellow(nameWithId(item))}\n`);
+            }
         }
     }
 

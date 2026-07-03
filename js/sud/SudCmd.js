@@ -3,7 +3,7 @@ import { Engine } from './engine.js';
 import { Player } from './player.js';
 import { system, term } from '../system/sys.js';
 import { bold, red, green, yellow, cyan, gray, magenta } from '../util/sgr.js';
-import { nameWithId } from './display.js';
+import { nameWithId, toDisplayId } from './display.js';
 
 export class SudCmd extends CmdBase {
     static get commandName() { return 'sud'; }
@@ -134,6 +134,57 @@ export class SudCmd extends CmdBase {
     }
 
     async _gameLoop() {
+        const completer = (currentWord, wordIndex, allWords) => {
+            if (currentWord === '') return [];
+
+            if (wordIndex === 0) {
+                const cmdNames = ['n', 's', 'e', 'w', 'u', 'd',
+                    'go', 'look', 'l', 'inventory', 'i', 'inv',
+                    'attack', 'kill', 'talk', 'say',
+                    'take', 'get', 'drop', 'use', 'equip',
+                    'status', 'st', 'save', 'help', 'h', 'quit',
+                    '北', '南', '東', '西', '上', '下',
+                    '移動', '看', '背包', '攻擊', '對話',
+                    '撿', '丟', '使用', '裝備',
+                    '狀態', '存檔', '幫助',
+                ];
+                return cmdNames.filter(c => c.startsWith(currentWord));
+            }
+
+            const verb = allWords[0].toLowerCase();
+            const room = this._engine.world.getRoom(this._player.currentRoom);
+            if (!room) return [];
+
+            const candidates = new Set();
+            const addEntity = (entity) => {
+                candidates.add(entity.name);
+                candidates.add(entity.id);
+                candidates.add(toDisplayId(entity.id));
+            };
+            const addList = (list) => { for (const e of list) addEntity(e); };
+
+            if (['attack', 'kill', '攻擊'].includes(verb)) {
+                addList(room.monsters);
+            } else if (['talk', 'say', '對話'].includes(verb)) {
+                addList(room.npcs);
+            } else if (['take', 'get', '撿'].includes(verb)) {
+                addList(room.items);
+            } else if (['drop', '丟'].includes(verb)) {
+                addList(this._player.inventory);
+            } else if (['equip', '裝備'].includes(verb)) {
+                for (const item of this._player.inventory) {
+                    if (item.equip) addEntity(item);
+                }
+            } else if (['use', '使用', 'look', 'l', '看'].includes(verb)) {
+                addList(room.items);
+                addList(room.monsters);
+                addList(room.npcs);
+                addList(this._player.inventory);
+            }
+
+            return [...candidates].filter(t => t.startsWith(currentWord));
+        };
+
         await this._lookRoom();
 
         while (true) {
@@ -152,7 +203,7 @@ export class SudCmd extends CmdBase {
 
             await this._drainTypewriter();
             term.write('> ');
-            const input = await this.readLineAsync('> ');
+            const input = await this.readLineAsync('> ', completer);
             if (input === null) continue;
             if (input.trim().toLowerCase() === 'quit') {
                 // Save on quit

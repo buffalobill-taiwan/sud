@@ -23,7 +23,7 @@ export class CmdBase {
 
     execute(args) {}
     print(text) { system.print(text); }
-    readLine(callback, prompt) { system.readLine(callback, prompt); }
+    readLine(callback, prompt, tabCompleter) { system.readLine(callback, prompt, tabCompleter); }
 
     // Override _onKey(data) for interactive key handling inside select()/prompt() flows.
     // Only override handleKey() directly if you must bypass all infrastructure
@@ -220,8 +220,8 @@ export class CmdBase {
 
     // === Promise-based APIs ===
 
-    readLineAsync(prompt) {
-        return new Promise(resolve => this.readLine(resolve, prompt));
+    readLineAsync(prompt, tabCompleter) {
+        return new Promise(resolve => this.readLine(resolve, prompt, tabCompleter));
     }
 
     selectAsync(opts) {
