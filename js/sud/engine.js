@@ -427,9 +427,18 @@ export class Engine {
     }
 
     async _doSave(cmd) {
+        const worldState = {};
+        for (const [id, room] of Object.entries(this.world._rooms)) {
+            worldState[id] = {
+                monsterIds: room.monsterIds,
+                itemIds: room.itemIds,
+                npcIds: room.npcIds,
+            };
+        }
         const data = {
             player: this.player.toSave(),
             flags: this.player.flags,
+            world: worldState,
             timestamp: Date.now(),
         };
         try {
@@ -480,23 +489,37 @@ export class Engine {
         if (data.flags) {
             Object.assign(this.player.flags, data.flags);
         }
-        // Restore room monster state from flags
-        for (const [key, val] of Object.entries(this.player.flags)) {
-            if (key.startsWith('killed_') && val) {
-                const monsterId = key.slice(7);
-                for (const room of Object.values(this.world._rooms)) {
-                    if (room.monsterIds.includes(monsterId)) {
-                        room.monsterIds = room.monsterIds.filter(id => id !== monsterId);
-                        room._monsters = null;
-                    }
+        // Restore full world state (monsters, items, NPCs per room)
+        if (data.world) {
+            for (const [id, state] of Object.entries(data.world)) {
+                const room = this.world.getRoom(id);
+                if (room) {
+                    room.monsterIds = state.monsterIds;
+                    room.itemIds = state.itemIds;
+                    room.npcIds = state.npcIds;
+                    room._monsters = null;
+                    room._npcs = null;
                 }
             }
-            if (key.startsWith('freed_') && val) {
-                const npcId = key.slice(6);
-                for (const room of Object.values(this.world._rooms)) {
-                    if (room.npcIds.includes(npcId)) {
-                        room.npcIds = room.npcIds.filter(id => id !== npcId);
-                        room._npcs = null;
+        } else {
+            // Legacy save fallback — restore from flags only
+            for (const [key, val] of Object.entries(this.player.flags)) {
+                if (key.startsWith('killed_') && val) {
+                    const monsterId = key.slice(7);
+                    for (const room of Object.values(this.world._rooms)) {
+                        if (room.monsterIds.includes(monsterId)) {
+                            room.monsterIds = room.monsterIds.filter(id => id !== monsterId);
+                            room._monsters = null;
+                        }
+                    }
+                }
+                if (key.startsWith('freed_') && val) {
+                    const npcId = key.slice(6);
+                    for (const room of Object.values(this.world._rooms)) {
+                        if (room.npcIds.includes(npcId)) {
+                            room.npcIds = room.npcIds.filter(id => id !== npcId);
+                            room._npcs = null;
+                        }
                     }
                 }
             }
