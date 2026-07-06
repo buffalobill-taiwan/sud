@@ -2,18 +2,27 @@ import { bold, red, green, yellow, cyan } from '../util/sgr.js';
 import { nameWithId, matchTarget } from './display.js';
 
 export class Combat {
-    constructor(engine, player, monster) {
+    constructor(engine, player, monsters) {
         this.engine = engine;
         this.player = player;
-        this.monster = monster;
+        this.monsters = monsters;
         this.active = true;
         this.turnCount = 0;
         this.fled = false;
     }
 
+    get aliveMonsters() {
+        return this.monsters.filter(m => m.hp > 0);
+    }
+
+    get isAllDead() {
+        return this.aliveMonsters.length === 0;
+    }
+
     async start(print) {
+        const list = this.aliveMonsters.map(m => bold(yellow(nameWithId(m)))).join('、');
         print(bold(red('⚔ 戰鬥開始！')) + '\n');
-        print(`你面對的是 ${bold(yellow(nameWithId(this.monster)))}！\n\n`);
+        print(`你面對的是 ${list}！\n\n`);
         await this._showStatus(print);
     }
 
@@ -22,7 +31,8 @@ export class Combat {
         const cmd = parts[0];
 
         if (cmd === 'attack' || cmd === 'a' || cmd === 'kill') {
-            return await this._playerAttack(print);
+            const target = parts.slice(1).join(' ');
+            return await this._playerAttack(target, print);
         }
         if (cmd === 'run' || cmd === 'flee') {
             return await this._tryFlee(print);
@@ -35,13 +45,29 @@ export class Combat {
             const itemName = parts.slice(1).join(' ');
             return await this._useItem(itemName, print);
         }
-        print(`戰鬥中用 ${yellow('attack')} 攻擊、${yellow('run')} 逃跑、${yellow('use <物品>')} 使用物品。\n`);
+        print(`戰鬥中用 ${yellow('attack [目標]')} 攻擊、${yellow('run')} 逃跑、${yellow('use <物品>')} 使用物品。\n`);
         return false;
     }
 
-    async _playerAttack(print) {
+    async _playerAttack(target, print) {
+        const alive = this.aliveMonsters;
+        if (alive.length === 0) {
+            await this._victory(print);
+            return true;
+        }
+        let monster;
+        if (target) {
+            monster = alive.find(m => matchTarget(target, m));
+            if (!monster) {
+                print(`這裡沒有 ${target}。\n`);
+                return false;
+            }
+        } else {
+            monster = alive[0];
+        }
+
         const atk = this.player.totalAtk;
-        const def = this.monster.def;
+        const def = monster.def;
         const baseDmg = Math.max(1, atk - def + Math.floor(Math.random() * 4) - 1);
         const crit = Math.random() < 0.15;
         const dmg = crit ? baseDmg * 2 : baseDmg;
@@ -49,12 +75,23 @@ export class Combat {
         if (crit) {
             print(bold(yellow('⚡ 會心一擊！')));
         }
-        print(`你對 ${bold(nameWithId(this.monster))} 造成了 ${bold(red(String(dmg)))} 點傷害！\n`);
-        this.monster.hp -= dmg;
+        print(`你對 ${bold(nameWithId(monster))} 造成了 ${bold(red(String(dmg)))} 點傷害！\n`);
+        monster.hp -= dmg;
 
-        if (this.monster.hp <= 0) {
-            await this._victory(print);
-            return true;
+        if (monster.hp <= 0) {
+            print(bold(green(`\n✧ 你擊敗了 ${bold(nameWithId(monster))}！✧\n`)));
+            this.engine._monsterDefeated(monster.id);
+            const exp = monster.exp || 0;
+            const leveled = this.player.addExp(exp);
+            print(`獲得 ${yellow(String(exp))} 經驗值。\n`);
+            if (leveled) {
+                print(bold(green(`\n▲ 升級！你現在是 Lv.${this.player.level} 了！\n`)));
+                print(`HP ${bold(green(String(this.player.maxHp)))}  MP ${bold(cyan(String(this.player.maxMp)))}\n`);
+            }
+            if (this.isAllDead) {
+                await this._victory(print);
+                return true;
+            }
         }
 
         await this._monsterTurn(print);
@@ -62,16 +99,19 @@ export class Combat {
     }
 
     async _monsterTurn(print) {
-        const atk = this.monster.atk;
-        const baseDmg = Math.max(1, atk - this.player.totalDef + Math.floor(Math.random() * 3) - 1);
-        const dmg = this.player.takeDamage(baseDmg);
+        const alive = this.aliveMonsters;
+        if (alive.length === 0) return;
 
-        print(`${bold(nameWithId(this.monster))} 對你造成了 ${bold(red(String(dmg)))} 點傷害！\n`);
-
-        if (!this.player.isAlive()) {
-            await this._defeat(print);
-            return;
+        for (const monster of alive) {
+            const baseDmg = Math.max(1, monster.atk - this.player.totalDef + Math.floor(Math.random() * 3) - 1);
+            const dmg = this.player.takeDamage(baseDmg);
+            print(`${bold(nameWithId(monster))} 對你造成了 ${bold(red(String(dmg)))} 點傷害！\n`);
+            if (!this.player.isAlive()) {
+                await this._defeat(print);
+                return;
+            }
         }
+
         await this._showStatus(print);
     }
 
@@ -114,26 +154,7 @@ export class Combat {
 
     async _victory(print) {
         this.active = false;
-        print(bold(green(`\n✧ 勝利！你擊敗了 ${bold(nameWithId(this.monster))}！✧\n`)));
-
-        const exp = this.monster.exp || 0;
-        const leveled = this.player.addExp(exp);
-        print(`獲得 ${yellow(String(exp))} 經驗值。\n`);
-        if (leveled) {
-            print(bold(green(`\n▲ 升級！你現在是 Lv.${this.player.level} 了！\n`)));
-            print(`HP ${bold(green(String(this.player.maxHp)))}  MP ${bold(cyan(String(this.player.maxMp)))}\n`);
-        }
-
-        if (this.monster.loot && this.monster.loot.length > 0) {
-            for (const lootId of this.monster.loot) {
-                const { ITEMS, getItem } = await import('./items.js');
-                const item = getItem(lootId);
-                if (item) {
-                    this.player.addItem(item);
-                    print(`獲得物品：${bold(yellow(nameWithId(item)))}！\n`);
-                }
-            }
-        }
+        print(bold(green('\n✦ 勝利！你擊敗了所有敵人！✦\n')));
     }
 
     async _defeat(print) {
@@ -142,11 +163,14 @@ export class Combat {
     }
 
     async _showStatus(print) {
-        const pHpBar = this._bar(this.player.hp, this.player.maxHp, 10);
-        const mHpBar = this._bar(this.monster.hp, this.monster.maxHp, 10);
         this.turnCount++;
+        const pHpBar = this._bar(this.player.hp, this.player.maxHp, 10);
         print(`\n${bold('你')}    HP: ${pHpBar} ${this.player.hp}/${this.player.maxHp}\n`);
-        print(`${bold(nameWithId(this.monster))} HP: ${mHpBar} ${Math.max(0, this.monster.hp)}/${this.monster.maxHp}\n\n`);
+        for (const m of this.aliveMonsters) {
+            const mHpBar = this._bar(m.hp, m.maxHp, 10);
+            print(`${bold(nameWithId(m))} HP: ${mHpBar} ${Math.max(0, m.hp)}/${m.maxHp}\n`);
+        }
+        print('\n');
     }
 
     _bar(current, max, length) {

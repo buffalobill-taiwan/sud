@@ -1,5 +1,6 @@
 import { World, ROOMS } from './world.js';
 import { getItem } from './items.js';
+import { getMonster } from './monsters.js';
 import { Combat } from './combat.js';
 import { bold, red, green, yellow, cyan, gray } from '../util/sgr.js';
 import { isWide } from '../util/unicode-width.js';
@@ -24,10 +25,8 @@ export class Engine {
             if (this.combat && !this.combat.active) {
                 if (!this.player.isAlive()) {
                     await this._handleDeath(cmd);
-                } else {
-                    this._removeDefeatedMonster();
-                    this.combat = null;
                 }
+                this.combat = null;
             }
             return;
         }
@@ -210,13 +209,18 @@ export class Engine {
             }
         }
 
-        // Group other items by ID and count
-        const grouped = new Map();
-        for (const item of other) {
-            const arr = grouped.get(item.id) || [];
-            arr.push(item);
-            grouped.set(item.id, arr);
-        }
+        // Group by ID and count
+        const groupBy = (arr) => {
+            const map = new Map();
+            for (const item of arr) {
+                const list = map.get(item.id) || [];
+                list.push(item);
+                map.set(item.id, list);
+            }
+            return map;
+        };
+        const equipGrouped = groupBy(equippable);
+        const otherGrouped = groupBy(other);
 
         cmd.print(bold('背包中的物品：') + '\n');
 
@@ -224,17 +228,21 @@ export class Engine {
             cmd.print(`  ${yellow(nameWithId(item))} （已裝備）\n`);
         }
 
-        for (const item of equippable) {
-            cmd.print(`  ${yellow(nameWithId(item))}\n`);
-        }
-
-        for (const [, items] of grouped) {
+        const printGroup = (items) => {
             const item = items[0];
             if (items.length > 1) {
                 cmd.print(`  ${yellow(nameWithId(item))} × ${items.length}\n`);
             } else {
                 cmd.print(`  ${yellow(nameWithId(item))}\n`);
             }
+        };
+
+        for (const [, items] of equipGrouped) {
+            printGroup(items);
+        }
+
+        for (const [, items] of otherGrouped) {
+            printGroup(items);
         }
     }
 
@@ -244,45 +252,28 @@ export class Engine {
             cmd.print('這裡沒有可以攻擊的目標。\n');
             return;
         }
-        let monster = null;
         if (target) {
-            monster = room.monsters.find(m =>
-                matchTarget(target, m)
-            );
-            if (!monster) {
+            const found = room.monsters.find(m => matchTarget(target, m));
+            if (!found) {
                 cmd.print(`這裡沒有 ${target}。\n`);
                 return;
             }
-        } else {
-            monster = room.monsters[0];
         }
-        // Refresh monster data
-        const { getMonster } = await import('./monsters.js');
-        const freshMonster = getMonster(monster.id);
-        if (!freshMonster) return;
-        this.combat = new Combat(this, this.player, freshMonster);
+        // Refresh all room monsters with fresh data
+        const freshMonsters = room.monsterIds.map(id => getMonster(id)).filter(Boolean);
+        if (freshMonsters.length === 0) return;
+        this.combat = new Combat(this, this.player, freshMonsters);
         await this.combat.start((text) => cmd.print(text));
-        if (!this.combat.active) {
-            if (this.player.isAlive()) {
-                this._removeDefeatedMonster();
-            } else {
-                await this._handleDeath(cmd);
-            }
-            this.combat = null;
-        }
     }
 
-    _removeDefeatedMonster() {
+    _monsterDefeated(monsterId) {
         const room = this.world.getRoom(this.player.currentRoom);
         if (!room) return;
-        const defeatedId = this.combat ? this.combat.monster.id : null;
-        if (defeatedId) {
-            this.player.flags['killed_' + defeatedId] = true;
-            room.monsterIds = room.monsterIds.filter(id => id !== defeatedId);
-            room._monsters = null;
-        }
+        this.player.flags['killed_' + monsterId] = true;
+        room.monsterIds = room.monsterIds.filter(id => id !== monsterId);
+        room._monsters = null;
         // Drop loot
-        const monster = this.combat ? this.combat.monster : null;
+        const monster = getMonster(monsterId);
         if (monster && monster.loot && monster.loot.length > 0) {
             for (const lootId of monster.loot) {
                 const item = getItem(lootId);
@@ -474,6 +465,10 @@ export class Engine {
         }
         const slot = item.equip;
         const old = this.player.equipped[slot];
+        if (item === old) {
+            cmd.print(`${bold(nameWithId(item))} 已經裝備了。\n`);
+            return;
+        }
         this.player.equipped[slot] = item;
         let msg = `你裝備了 ${bold(green(nameWithId(item)))}。`;
         if (item.atk) msg += ` 攻擊力 +${item.atk}`;
