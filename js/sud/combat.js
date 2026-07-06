@@ -45,7 +45,10 @@ export class Combat {
             const itemName = parts.slice(1).join(' ');
             return await this._useItem(itemName, print);
         }
-        print(`戰鬥中用 ${yellow('attack [目標]')} 攻擊、${yellow('run')} 逃跑、${yellow('use <物品>')} 使用物品。\n`);
+        if (cmd === 'cast' || cmd === 'c') {
+            return await this._castSpell(print);
+        }
+        print(`戰鬥中用 ${yellow('attack [目標]')} 攻擊、${yellow('cast')} 魔法、${yellow('run')} 逃跑、${yellow('use <物品>')} 使用物品。\n`);
         return false;
     }
 
@@ -152,6 +155,44 @@ export class Combat {
         return false;
     }
 
+    async _castSpell(print) {
+        const mpCost = 3;
+        if (this.player.mp < mpCost) {
+            print(yellow('魔力不足！\n'));
+            return false;
+        }
+        this.player.mp -= mpCost;
+        const alive = this.aliveMonsters;
+        if (alive.length === 0) {
+            await this._victory(print);
+            return true;
+        }
+        const monster = alive[0];
+        const baseDmg = this.player.totalAtk * 2 + Math.floor(Math.random() * 6);
+        const dmg = Math.max(1, baseDmg - Math.floor(monster.def / 2));
+        print(bold(cyan(`✦ 你施展了魔法！消耗 ${mpCost} MP，對 ${bold(nameWithId(monster))} 造成 ${bold(red(String(dmg)))} 點傷害！\n`)));
+        monster.hp -= dmg;
+
+        if (monster.hp <= 0) {
+            print(bold(green(`\n✧ 你擊敗了 ${bold(nameWithId(monster))}！✧\n`)));
+            this.engine._monsterDefeated(monster.id);
+            const exp = monster.exp || 0;
+            const leveled = this.player.addExp(exp);
+            print(`獲得 ${yellow(String(exp))} 經驗值。\n`);
+            if (leveled) {
+                print(bold(green(`\n▲ 升級！你現在是 Lv.${this.player.level} 了！\n`)));
+                print(`HP ${bold(green(String(this.player.maxHp)))}  MP ${bold(cyan(String(this.player.maxMp)))}\n`);
+            }
+            if (this.isAllDead) {
+                await this._victory(print);
+                return true;
+            }
+        }
+
+        await this._monsterTurn(print);
+        return this.player.isAlive();
+    }
+
     async _victory(print) {
         this.active = false;
         print(bold(green('\n✦ 勝利！你擊敗了所有敵人！✦\n')));
@@ -165,7 +206,8 @@ export class Combat {
     async _showStatus(print) {
         this.turnCount++;
         const pHpBar = this._bar(this.player.hp, this.player.maxHp, 10);
-        print(`\n${bold('你')}    HP: ${pHpBar} ${this.player.hp}/${this.player.maxHp}\n`);
+        const pMpBar = this._bar(this.player.mp, this.player.maxMp, 10);
+        print(`\n${bold('你')}    HP: ${pHpBar} ${this.player.hp}/${this.player.maxHp}  MP: ${pMpBar} ${this.player.mp}/${this.player.maxMp}\n`);
         for (const m of this.aliveMonsters) {
             const mHpBar = this._bar(m.hp, m.maxHp, 10);
             print(`${bold(nameWithId(m))} HP: ${mHpBar} ${Math.max(0, m.hp)}/${m.maxHp}\n`);

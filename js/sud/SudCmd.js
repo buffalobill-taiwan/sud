@@ -234,8 +234,15 @@ export class SudCmd extends CmdBase {
             const npcNames = room.npcs.map(n => bold(cyan(nameWithId(n)))).join('  ');
             this.print(`\n這裡有：${npcNames}\n`);
         }
-        if (room.exitsList.length > 0) {
-            this.print(`\n出口：${green(room.exitsList.join('  '))}\n`);
+        if (Object.keys(room.exits).length > 0) {
+            const dirMap = { n: '北[N]', s: '南[S]', e: '東[E]', w: '西[W]', u: '上[U]', d: '下[D]' };
+            const exitStrs = Object.entries(room.exits).map(([k, v]) => {
+                const nextRoom = this._engine.world.getRoom(v);
+                const hasMonsters = nextRoom && nextRoom.monsterIds.length > 0;
+                const dirName = dirMap[k] || k;
+                return hasMonsters ? red(dirName) : green(dirName);
+            });
+            this.print(`\n出口：${exitStrs.join('  ')}\n`);
         }
     }
 

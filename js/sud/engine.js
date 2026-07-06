@@ -45,7 +45,7 @@ export class Engine {
             case 'inventory': case 'i': case 'inv': case '背包':
                 await this._doInventory(cmd);
                 break;
-            case 'attack': case 'kill': case '攻擊':
+            case 'attack': case 'a': case 'kill': case '攻擊':
                 await this._doAttack(args.join(' '), cmd);
                 break;
             case 'talk': case 'say': case '對話':
@@ -62,6 +62,13 @@ export class Engine {
                 break;
             case 'equip': case '裝備':
                 await this._doEquip(args.join(' '), cmd);
+                break;
+            case 'cast': case 'c': case '魔法':
+                if (this.combat && this.combat.active) {
+                    await this.combat.handleCommand(input, (text) => cmd.print(text));
+                } else {
+                    cmd.print('現在沒有可以攻擊的目標。\n');
+                }
                 break;
             case 'status': case 'st': case '狀態':
                 await this._doStatus(cmd);
@@ -150,6 +157,10 @@ export class Engine {
                 const nextRoom = this.world.getRoom(v);
                 if (nextRoom) {
                     cmd.print(`${dirName}：${nextRoom.name}\n`);
+                    if (nextRoom.monsterIds.length > 0) {
+                        const monNames = nextRoom.monsters.map(m => bold(red(nameWithId(m)))).join('  ');
+                        cmd.print(`  ⚠ 裡面有 ${monNames}！\n`);
+                    }
                 }
                 return;
             }
@@ -182,8 +193,15 @@ export class Engine {
             const npcNames = room.npcs.map(n => bold(cyan(nameWithId(n)))).join('  ');
             cmd.print(`\n這裡有：${npcNames}\n`);
         }
-        if (room.exitsList.length > 0) {
-            cmd.print(`\n出口：${green(room.exitsList.join('  '))}\n`);
+        if (Object.keys(room.exits).length > 0) {
+            const dirMap = { n: '北[N]', s: '南[S]', e: '東[E]', w: '西[W]', u: '上[U]', d: '下[D]' };
+            const exitStrs = Object.entries(room.exits).map(([k, v]) => {
+                const nextRoom = this.world.getRoom(v);
+                const hasMonsters = nextRoom && nextRoom.monsterIds.length > 0;
+                const dirName = dirMap[k] || k;
+                return hasMonsters ? red(dirName) : green(dirName);
+            });
+            cmd.print(`\n出口：${exitStrs.join('  ')}\n`);
         }
     }
 
